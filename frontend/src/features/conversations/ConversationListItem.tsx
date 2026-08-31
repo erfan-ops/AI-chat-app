@@ -105,6 +105,9 @@ export function ConversationListItem({ conversation, isActive, onSelect }: Conve
               <>
                 <span className={styles.title}>{displayTitle}</span>
                 <span className={styles.meta}>
+                  {conversation.user_persona && (
+                    <span className={styles.persona}>as {conversation.user_persona.name}</span>
+                  )}
                   {modelLabel && <span className={styles.model}>{modelLabel}</span>}
                   {conversation.last_message_at && (
                     <span className={styles.time}>

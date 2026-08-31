@@ -2,6 +2,8 @@ import { useMemo, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { listModels } from '../../api/models'
 import { useCharacters } from '../characters/useCharacters'
+import { usePersonas } from '../personas/usePersonas'
+import { PersonaFormModal } from '../personas/PersonaFormModal'
 import { useCreateConversation } from '../conversations/useConversations'
 import { useSession } from '../../session/authSession'
 import { Modal } from '../../components/Modal'
@@ -11,8 +13,8 @@ import { ErrorState } from '../../components/ErrorState'
 import { Spinner } from '../../components/Spinner'
 import { pushToast } from '../../components/toastStore'
 import { errorMessage } from '../../utils/errors'
-import { CheckIcon, SparklesIcon, UserIcon } from '../../components/Icons'
-import type { AIModel, Character } from '../../types/api'
+import { CheckIcon, PlusIcon, SparklesIcon, UserIcon } from '../../components/Icons'
+import type { AIModel, Character, Persona } from '../../types/api'
 import styles from './NewConversationModal.module.css'
 
 export interface NewConversationModalProps {
@@ -25,6 +27,7 @@ export interface NewConversationModalProps {
 const modelsQueryKey = ['models'] as const
 const EMPTY_CHARACTERS: Character[] = []
 const EMPTY_MODELS: AIModel[] = []
+const EMPTY_PERSONAS: Persona[] = []
 
 /**
  * Character + model selection for a new conversation. Both lists come from
@@ -36,15 +39,20 @@ const EMPTY_MODELS: AIModel[] = []
 export function NewConversationModal({ open, onClose, onCreated }: NewConversationModalProps) {
   const charactersQuery = useCharacters()
   const modelsQuery = useQuery({ queryKey: modelsQueryKey, queryFn: listModels })
+  const personasQuery = usePersonas()
   const session = useSession()
   const create = useCreateConversation()
 
   const [characterId, setCharacterId] = useState<number | null>(null)
   const [modelId, setModelId] = useState<number | null>(null)
+  // null means "no persona" — the default; a persona is always optional.
+  const [personaId, setPersonaId] = useState<number | null>(null)
   const [title, setTitle] = useState('')
+  const [personaFormOpen, setPersonaFormOpen] = useState(false)
 
   const characters = charactersQuery.data ?? EMPTY_CHARACTERS
   const models = modelsQuery.data ?? EMPTY_MODELS
+  const personas = personasQuery.data ?? EMPTY_PERSONAS
 
   // Derived during render: the user's default model when it is still active,
   // otherwise the first active model. An explicit pick overrides it.
@@ -65,7 +73,12 @@ export function NewConversationModal({ open, onClose, onCreated }: NewConversati
   function handleCreate() {
     if (characterId === null) return
     create.mutate(
-      { character_id: characterId, model_id: effectiveModelId, title: title.trim() || null },
+      {
+        character_id: characterId,
+        model_id: effectiveModelId,
+        user_persona_id: personaId,
+        title: title.trim() || null,
+      },
       {
         onSuccess: (conversation) => {
           onCreated(conversation.id)
@@ -79,7 +92,8 @@ export function NewConversationModal({ open, onClose, onCreated }: NewConversati
   }
 
   return (
-    <Modal open={open} onClose={onClose} title="New chat" size="lg">
+    <>
+      <Modal open={open} onClose={onClose} title="New chat" size="lg">
       <div className={styles.layout}>
         <section className={styles.section} aria-labelledby="nc-characters">
           <h3 id="nc-characters" className={styles.sectionTitle}>
@@ -191,6 +205,88 @@ export function NewConversationModal({ open, onClose, onCreated }: NewConversati
             />
           </div>
         </section>
+
+        <section className={`${styles.section} ${styles.personaSection}`} aria-labelledby="nc-persona">
+          <h3 id="nc-persona" className={styles.sectionTitle}>
+            Who are you? <span className={styles.optional}>(optional)</span>
+          </h3>
+
+          {personasQuery.isPending && (
+            <div className={styles.loading}>
+              <Spinner size={22} label="Loading personas" />
+            </div>
+          )}
+
+          {personasQuery.isError && (
+            <p className={styles.personaError}>
+              Couldn&apos;t load your personas.{' '}
+              <button
+                type="button"
+                className={styles.personaRetry}
+                onClick={() => {
+                  void personasQuery.refetch()
+                }}
+              >
+                Retry
+              </button>
+            </p>
+          )}
+
+          {personasQuery.isSuccess && (
+            <div className={styles.personaRow} role="radiogroup" aria-label="Persona">
+              <button
+                type="button"
+                role="radio"
+                aria-checked={personaId === null}
+                className={`${styles.personaChip} ${personaId === null ? styles.personaChipSelected : ''}`}
+                onClick={() => setPersonaId(null)}
+              >
+                <span className={styles.personaChipName}>No persona</span>
+                {personaId === null && (
+                  <span className={styles.personaChipCheck} aria-hidden="true">
+                    <CheckIcon />
+                  </span>
+                )}
+              </button>
+
+              {personas.map((persona) => {
+                const selected = persona.id === personaId
+                const details = [persona.gender, persona.age != null ? String(persona.age) : null]
+                  .filter(Boolean)
+                  .join(' · ')
+                return (
+                  <button
+                    key={persona.id}
+                    type="button"
+                    role="radio"
+                    aria-checked={selected}
+                    className={`${styles.personaChip} ${selected ? styles.personaChipSelected : ''}`}
+                    onClick={() => setPersonaId(persona.id)}
+                  >
+                    <span className={styles.personaChipInfo}>
+                      <span className={styles.personaChipName}>{persona.name}</span>
+                      {details && <span className={styles.personaChipDetails}>{details}</span>}
+                    </span>
+                    {selected && (
+                      <span className={styles.personaChipCheck} aria-hidden="true">
+                        <CheckIcon />
+                      </span>
+                    )}
+                  </button>
+                )
+              })}
+
+              <button
+                type="button"
+                className={styles.newPersonaChip}
+                onClick={() => setPersonaFormOpen(true)}
+              >
+                <PlusIcon aria-hidden="true" />
+                New persona
+              </button>
+            </div>
+          )}
+        </section>
       </div>
 
       <footer className={styles.footer}>
@@ -217,6 +313,19 @@ export function NewConversationModal({ open, onClose, onCreated }: NewConversati
         </button>
       </footer>
     </Modal>
+
+    {personaFormOpen && (
+      <PersonaFormModal
+        open={personaFormOpen}
+        onClose={() => setPersonaFormOpen(false)}
+        onCreated={(persona) => {
+          // Selecting the new persona immediately beats re-finding it in the list.
+          setPersonaId(persona.id)
+          setPersonaFormOpen(false)
+        }}
+      />
+    )}
+  </>
   )
 }
 

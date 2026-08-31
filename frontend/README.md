@@ -4,9 +4,11 @@ A modern chat application built with **React 19 + TypeScript + Vite**, talking t
 FastAPI backend at `http://localhost:8000`. The flow is:
 
 **Choose a character → choose the AI model → create a conversation → chat.**
+(You can also add and pick a **user persona** — how the AI knows you — but chatting
+without one is always allowed.)
 
 AI replies stream in live over Server-Sent Events; everything else uses the backend's
-REST endpoints. All data (characters, models, conversations, messages) comes from the
+REST endpoints. All data (characters, models, personas, conversations, messages) comes from the
 API — nothing is hardcoded or mocked.
 
 ## Requirements
@@ -77,7 +79,8 @@ src/
     auth/AuthPage          # sign-in / account creation (the API requires a Bearer token)
     conversations/         # sidebar, list items (rename/delete), infinite list query
     characters/            # cached character lookup (for avatars)
-    newConversation/       # character + model picker modal
+    personas/              # user personas: cached list + create-persona form modal
+    newConversation/       # character + model picker modal (+ optional persona picker)
     chat/                  # ChatView, MessageList, MessageComposer,
                            #   useSendMessage (SSE), useMessages (before_id paging),
                            #   streamingStore (module-level store for in-flight replies)
@@ -114,7 +117,7 @@ docs/openapi.json          # snapshot of the backend's OpenAPI spec
   fallback, since current avatars are `null`).
 - The conversation list only exposes a `{id, name}` character brief and no last-message
   preview, so sidebar items show: character avatar, title (or character name), model
-  name, and relative time of the last activity.
+  name, persona (as "as …" when one was picked), and relative time of the last activity.
 - Reply streaming is incremental over HTTP; the composer stays disabled while the
   character is replying (typing indicator shown), and re-enables right after.
 - Conversation deletion is a **soft delete** server-side; the UI treats it as removal

@@ -54,6 +54,27 @@ export interface Character {
   created_at: string
 }
 
+/** A user-authored persona — how the user presents themselves in a chat
+ *  (mirrors PersonaRead; the AI character above is a separate concept).
+ *  Only the fields the user filled in are set, the rest are null. */
+export interface Persona {
+  id: number
+  user_id: number
+  name: string
+  gender: string | null
+  description: string | null
+  age: number | null
+}
+
+/** Body for POST /personas. Only `name` is required; the rest are optional
+ *  and stored as null when omitted. */
+export interface PersonaCreateRequest {
+  name: string
+  gender?: string | null
+  description?: string | null
+  age?: number | null
+}
+
 /** An active AI model offered for conversations (API keys are never exposed). */
 export interface AIModel {
   id: number
@@ -67,6 +88,8 @@ export interface Conversation {
   id: number
   character: { id: number; name: string } | null
   model: { id: number; model_name: string; display_name: string | null } | null
+  /** The user's chosen persona for this chat; null when none was picked. */
+  user_persona: { id: number; name: string } | null
   title: string | null
   status: string
   created_at: string
@@ -75,10 +98,12 @@ export interface Conversation {
 }
 
 /** Body for POST /conversations. `model_id` defaults server-side to the
- *  user's default model, then to the first active model. */
+ *  user's default model, then to the first active model. `user_persona_id`
+ *  is optional — omit it (or pass null) to chat without a persona. */
 export interface ConversationCreateRequest {
   character_id: number
   model_id?: number | null
+  user_persona_id?: number | null
   title?: string | null
 }
 

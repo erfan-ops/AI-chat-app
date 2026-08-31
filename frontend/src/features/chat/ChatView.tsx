@@ -96,7 +96,10 @@ export function ChatView({ conversationId, onBack }: ChatViewProps) {
             {isTyping ? (
               <span className={styles.typing}>{characterName} is typing…</span>
             ) : (
-              modelLabel ?? 'AI companion'
+              <>
+                {modelLabel ?? 'AI companion'}
+                {conversation.user_persona && <> · as {conversation.user_persona.name}</>}
+              </>
             )}
           </p>
         </div>
