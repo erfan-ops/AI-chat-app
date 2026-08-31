@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from collections.abc import Collection
+
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -32,6 +34,18 @@ class MessageRepository:
             Message.id == message_id, Message.conversation_id == conversation_id
         )
         return (await self._db.scalars(stmt)).first()
+
+    async def get_many_for_conversation(
+        self, message_ids: Collection[int], conversation_id: int
+    ) -> list[Message]:
+        """Batch fetch by primary keys, scoped to one conversation (reply targets).
+
+        One ``IN`` query instead of a query per referenced message.
+        """
+        stmt = select(Message).where(
+            Message.conversation_id == conversation_id, Message.id.in_(message_ids)
+        )
+        return list((await self._db.scalars(stmt)).all())
 
     async def add(self, message: Message) -> Message:
         self._db.add(message)

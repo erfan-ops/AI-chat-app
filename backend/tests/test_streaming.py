@@ -100,6 +100,8 @@ async def test_stream_success_flow(
     assert "Maya" in request.messages[0].content
     assert request.messages[-1].role == "user"
     assert request.messages[-1].content == "Hi, how are you?"
+    # No replies in this conversation → the system prompt stays unchanged.
+    assert "reply_context" not in request.messages[0].content
 
 
 async def test_stream_consumes_provider_incrementally(
@@ -371,3 +373,117 @@ async def test_stream_reply_to_missing_message_returns_404(
     )
     assert response.status_code == 404
     assert response.json() == {"detail": "Reply target not found"}
+
+
+# -- Reply context in the AI request ------------------------------------------------
+
+
+async def test_stream_reply_sends_reply_context_to_provider(
+    client: AsyncClient, session_factory: Any, scripted_provider: ScriptedProvider
+) -> None:
+    """Replying to an assistant message quotes it in the AI request, role intact."""
+    headers, _user = await auth_user(client, "alice")
+    conversation = await create_conversation(client, headers)
+    conversation_id = conversation["id"]
+    target_id = await seed_message(
+        session_factory,
+        conversation_id=conversation_id,
+        role="assistant",
+        content="You should get some rest.",
+    )
+
+    response = await client.post(
+        f"/conversations/{conversation_id}/messages",
+        json={"content": "Why?", "reply_to_id": target_id},
+        headers=headers,
+    )
+    assert response.status_code == 200
+    await response.aread()  # drain the stream so persistence completes
+
+    request = scripted_provider.requests[-1]
+    # The message keeps its real role; only the content is augmented.
+    last = request.messages[-1]
+    assert last.role == "user"
+    assert last.content == (
+        '<reply_context>\n<message sender="assistant">\nYou should get some rest.\n'
+        "</message>\n</reply_context>\n\nWhy?"
+    )
+    # The quoted message is not duplicated in history, and no DB id leaks.
+    assistant_messages = [m for m in request.messages if m.role == "assistant"]
+    assert len(assistant_messages) == 1
+    assert assistant_messages[0].content == "You should get some rest."
+    assert str(target_id) not in last.content
+    # The system prompt explains the format because the conversation uses replies.
+    assert "`<reply_context>` block" in request.messages[0].content
+
+
+async def test_stream_reply_to_user_message_uses_user_sender(
+    client: AsyncClient, session_factory: Any, scripted_provider: ScriptedProvider
+) -> None:
+    headers, _user = await auth_user(client, "alice")
+    conversation = await create_conversation(client, headers)
+    conversation_id = conversation["id"]
+    target_id = await seed_message(
+        session_factory,
+        conversation_id=conversation_id,
+        role="user",
+        content="I'm feeling tired today.",
+    )
+
+    response = await client.post(
+        f"/conversations/{conversation_id}/messages",
+        json={"content": "Why?", "reply_to_id": target_id},
+        headers=headers,
+    )
+    assert response.status_code == 200
+    await response.aread()
+
+    request = scripted_provider.requests[-1]
+    assert request.messages[-1].content == (
+        '<reply_context>\n<message sender="user">\nI\'m feeling tired today.\n'
+        "</message>\n</reply_context>\n\nWhy?"
+    )
+
+
+async def test_stream_reply_context_missing_target_is_skipped(
+    client: AsyncClient, session_factory: Any, scripted_provider: ScriptedProvider
+) -> None:
+    """A history reply whose target was deleted degrades to a plain message."""
+    headers, _user = await auth_user(client, "alice")
+    conversation = await create_conversation(client, headers)
+    conversation_id = conversation["id"]
+    target_id = await seed_message(
+        session_factory,
+        conversation_id=conversation_id,
+        role="assistant",
+        content="You should get some rest.",
+    )
+    first = await client.post(
+        f"/conversations/{conversation_id}/messages",
+        json={"content": "Why?", "reply_to_id": target_id},
+        headers=headers,
+    )
+    assert first.status_code == 200
+    await first.aread()
+
+    # Remove the referenced message directly from the database.
+    async with session_factory() as db:
+        target = await db.get(Message, target_id)
+        assert target is not None
+        await db.delete(target)
+        await db.commit()
+
+    response = await client.post(
+        f"/conversations/{conversation_id}/messages",
+        json={"content": "Second message"},
+        headers=headers,
+    )
+    assert response.status_code == 200
+    await response.aread()
+
+    request = scripted_provider.requests[-1]
+    # Neither the new message nor the earlier reply is quoted — no crash, no block.
+    assert request.messages[-1].content == "Second message"
+    assert any(m.content == "Why?" for m in request.messages)
+    assert not any("reply_context" in m.content for m in request.messages[1:])
+    assert "`<reply_context>` block" not in request.messages[0].content

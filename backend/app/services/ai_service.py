@@ -10,7 +10,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import time
-from collections.abc import AsyncIterator, Callable
+from collections.abc import AsyncIterator, Callable, Sequence
 from contextlib import aclosing
 from dataclasses import dataclass
 
@@ -137,6 +137,7 @@ class AIService:
             history = await MessageRepository(db).list_for_conversation(
                 conversation_id, limit=MAX_HISTORY_FETCH
             )
+            reply_targets = await self._load_reply_targets(db, history, conversation_id)
             memories = await MemoryRepository(db).top_for_context(
                 user_id, character_id, limit=settings.ai_max_memories
             )
@@ -157,6 +158,7 @@ class AIService:
             default_context_chars=settings.ai_default_context_chars,
             max_memories=settings.ai_max_memories,
             user_persona=persona,
+            reply_targets=reply_targets,
         )
         structured(
             logger,
@@ -327,6 +329,20 @@ class AIService:
         )
 
     # -- Internal helpers ----------------------------------------------------------
+
+    async def _load_reply_targets(
+        self, db: AsyncSession, messages: Sequence[Message], conversation_id: int
+    ) -> dict[int, Message]:
+        """Batch-load the messages referenced by ``reply_to_id`` — one query, no N+1.
+
+        Missing targets (deleted rows) are simply absent from the result; the
+        context builder quotes only what was actually found.
+        """
+        reply_ids = {m.reply_to_id for m in messages if m.reply_to_id is not None}
+        if not reply_ids:
+            return {}
+        targets = await MessageRepository(db).get_many_for_conversation(reply_ids, conversation_id)
+        return {m.id: m for m in targets}
 
     def _resolve_endpoint(self, model: AIModel, settings: Settings) -> EndpointConfig:
         if settings.ai_provider != "database":

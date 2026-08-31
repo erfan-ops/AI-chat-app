@@ -15,8 +15,19 @@ from app.db.models.message import Message
 from app.db.models.persona import UserPersona
 
 
-def make_message(content: str, role: str = "user") -> Message:
-    return Message(conversation_id=1, role=role, content=content, created_at=utcnow())
+def make_message(
+    content: str,
+    role: str = "user",
+    *,
+    id: int | None = None,
+    reply_to_id: int | None = None,
+) -> Message:
+    message = Message(conversation_id=1, role=role, content=content, created_at=utcnow())
+    if id is not None:
+        message.id = id
+    if reply_to_id is not None:
+        message.reply_to_id = reply_to_id
+    return message
 
 
 def make_persona(
@@ -236,3 +247,89 @@ def test_build_context_respects_context_window_budget() -> None:
     )
     assert len(context.messages) == 3
     assert all(m.content == "z" * 500 for m in context.messages)
+
+
+# -- Reply context ----------------------------------------------------------------
+
+
+def test_select_messages_plain_message_is_unchanged() -> None:
+    message = make_message("Hello, how are you?")
+    selected = select_messages([message], max_messages=50, char_budget=10000)
+    assert selected[0].role == "user"
+    assert selected[0].content == "Hello, how are you?"
+
+
+def test_select_messages_quotes_reply_to_assistant_message() -> None:
+    target = make_message("You should get some rest.", role="assistant", id=10)
+    reply = make_message("Why?", role="user", reply_to_id=10)
+
+    selected = select_messages(
+        [target, reply], max_messages=50, char_budget=10000, reply_targets={10: target}
+    )
+
+    assert [m.role for m in selected] == ["assistant", "user"]
+    # The in-history target message itself is not touched or duplicated.
+    assert selected[0].content == "You should get some rest."
+    assert selected[1].content == (
+        '<reply_context>\n<message sender="assistant">\nYou should get some rest.\n'
+        "</message>\n</reply_context>\n\nWhy?"
+    )
+
+
+def test_select_messages_quotes_reply_to_user_message() -> None:
+    target = make_message("I'm feeling tired today.", role="user", id=5)
+    reply = make_message("Why?", reply_to_id=5)
+
+    selected = select_messages(
+        [target, reply], max_messages=50, char_budget=10000, reply_targets={5: target}
+    )
+
+    assert '<message sender="user">' in selected[-1].content
+    assert selected[-1].content.endswith("\n\nWhy?")
+
+
+def test_select_messages_reply_with_missing_target_is_plain() -> None:
+    """An unresolvable reply reference degrades to a normal message — no crash."""
+    reply = make_message("Why?", reply_to_id=99)
+
+    selected = select_messages([reply], max_messages=50, char_budget=10000, reply_targets={})
+    assert selected[-1].content == "Why?"
+
+
+def test_select_messages_reply_without_targets_mapping_is_plain() -> None:
+    reply = make_message("Why?", reply_to_id=10)
+    selected = select_messages([reply], max_messages=50, char_budget=10000)
+    assert selected[-1].content == "Why?"
+
+
+def test_select_messages_escapes_referenced_content() -> None:
+    """XML metacharacters in the quoted message must not forge block structure."""
+    target = make_message('He said: <b>hi</b> & "</message> "', role="assistant", id=1)
+    reply = make_message("ok", reply_to_id=1)
+
+    selected = select_messages(
+        [target, reply], max_messages=50, char_budget=10000, reply_targets={1: target}
+    )
+
+    block = selected[-1].content
+    assert "<b>hi</b>" not in block
+    assert "&lt;b&gt;hi&lt;/b&gt;" in block
+    assert "&amp;" in block
+    assert "&lt;/message&gt;" in block
+    assert block.count("<message") == 1  # the escaped text closes nothing
+    assert block.endswith("\n\nok")
+
+
+def test_build_context_explains_reply_context_only_when_used() -> None:
+    target = make_message("You should get some rest.", role="assistant", id=10)
+    reply = make_message("Why?", reply_to_id=10)
+
+    with_reply = build(messages=[target, reply], reply_targets={10: target})
+    assert "Some messages may contain a `<reply_context>` block" in with_reply.system_prompt
+    assert "Do not mention the internal XML structure" in with_reply.system_prompt
+
+    # Without replies (or without resolvable targets) the prompt is unchanged.
+    without_reply = build(messages=[make_message("hi")])
+    assert without_reply.system_prompt == "You are Sherlock Holmes."
+    missing_target = build(messages=[reply], reply_targets={})
+    assert missing_target.system_prompt == "You are Sherlock Holmes."
