@@ -45,17 +45,30 @@ _MARKER_PATTERN = re.compile(
 )
 
 # Unconditional: every history message is enveloped, so the AI always needs the
-# contract — both how to read history and how to shape its reply.
+# contract — both how to read history and how to shape its reply. Kept explicit
+# (shape, targeting rules, JSON validity, example): models that receive a vague
+# format hint routinely reply with prose or wrapped JSON instead of the envelope.
 MESSAGE_FORMAT_HINT = (
-    "Every message in this conversation is sent to you as a JSON object of the form "
-    '{"id": <number>, "role": "user"|"assistant", "content": "<message text>", '
-    '"reply_to_id": <number|null>}: id is the message\'s id, and reply_to_id is the '
-    "id of the message it replies to (null when it is not a reply). "
-    "Reply with a single JSON object of the form "
-    '{"content": "<your reply>", "reply_to_id": <number|null>}: set reply_to_id to '
-    "the id of the message you are replying to, or null when you are not replying to "
-    "a specific message. The server assigns the id of your message, so do not include "
-    "an id in your reply. Output nothing but the JSON object."
+    "STRICT OUTPUT CONTRACT. Your entire reply must be exactly one valid JSON object "
+    "and nothing else: no markdown, no code fences, no prose before or after, no "
+    "multiple objects, no arrays. The object must have exactly this shape: "
+    '{"content": "<your reply>", "reply_to_id": <number|null>}. '
+    'The server assigns your message\'s id, so never include an "id" field — '
+    'only "content" and "reply_to_id".\n'
+    "INCOMING MESSAGE FORMAT. Every message in the conversation history is sent to "
+    'you as one JSON object per message: {"id": <number>, "role": "user"|"assistant", '
+    '"content": "<message text>", "reply_to_id": <number|null>}. '
+    "id is that message's id, and reply_to_id is the id of the message it replies to "
+    "(null when it is not a reply). The content field holds the actual message text — "
+    "reply to it naturally, never quote or imitate the JSON wrapper.\n"
+    "REPLY TARGETING. Set reply_to_id to the id of the specific message you are "
+    "answering (the ids appear in the history above). Do this when the user refers to "
+    "an earlier message by content, or asks you to reply to one; otherwise set it to "
+    'null. Example: for the incoming message {"id": 12, "role": "user", '
+    '"content": "How are you?", "reply_to_id": null}, a direct answer would be '
+    '{"content": "I\'m great, thank you!", "reply_to_id": 12}.\n'
+    'JSON VALIDITY RULES. Escape double quotes inside your text as \\" and newlines '
+    "as \\n; do not use trailing commas or comments. Output nothing but the JSON object."
 )
 
 
@@ -90,14 +103,56 @@ def render_message_body(message: Message) -> str:
     )
 
 
+def _replace_lone_surrogates(text: str) -> str:
+    """Combine valid surrogate pairs and replace unpaired surrogates with U+FFFD.
+
+    An emoji in JSON is two ``\\uXXXX`` escapes; a chunk boundary can split the
+    pair mid-way, and a truncated reply can end mid-pair. A lone surrogate
+    cannot be UTF-8 encoded, so without this any split or truncated escape
+    would crash SSE serialization downstream.
+    """
+    result: list[str] = []
+    i = 0
+    while i < len(text):
+        code = ord(text[i])
+        if 0xD800 <= code <= 0xDBFF:  # high surrogate
+            if i + 1 < len(text) and 0xDC00 <= ord(text[i + 1]) <= 0xDFFF:
+                # Low half present — combine into the real code point.
+                result.append(chr(0x10000 + ((code - 0xD800) << 10) + (ord(text[i + 1]) - 0xDC00)))
+                i += 2
+            else:
+                result.append("�")
+                i += 1
+        elif 0xDC00 <= code <= 0xDFFF:  # lone low surrogate
+            result.append("�")
+            i += 1
+        else:
+            result.append(text[i])
+            i += 1
+    return "".join(result)
+
+
+def _low_surrogate_follows(text: str, index: int, end: int) -> bool:
+    """True when the high-surrogate escape at ``index`` is immediately followed
+    by its required low-half escape (``\\udc00``-``\\udfff``) within the buffer."""
+    if index + 12 > end or text[index + 6 : index + 8] != "\\u":
+        return False
+    try:
+        return 0xDC00 <= int(text[index + 8 : index + 12], 16) <= 0xDFFF
+    except ValueError:
+        return False
+
+
 def extract_streamed_content(buffer: str) -> str | None:
     """Extract the ``content`` string from a partially streamed JSON envelope.
 
     Returns the full content value once its closing quote has arrived, and a
     decodable prefix while the value is still streaming; ``None`` until the
-    envelope's ``"content"`` key has been recognized. A trailing backslash or a
-    partial ``\\uXXXX`` escape at the end of the buffer is held back, so a
-    prefix is never emitted that later turns out to be corrupt.
+    envelope's ``"content"`` key has been recognized. A trailing backslash, a
+    partial ``\\uXXXX`` escape, or a high surrogate whose low half has not
+    arrived yet is held back, so a prefix is never emitted that later turns out
+    to be corrupt — a lone surrogate cannot be UTF-8 encoded and would crash
+    SSE serialization downstream.
     """
     text = buffer.lstrip()
     if not text.startswith("{"):
@@ -121,17 +176,29 @@ def extract_streamed_content(buffer: str) -> str | None:
             if i + 1 >= end or (text[i + 1] == "u" and i + 6 > end):
                 end = i  # dangling backslash / partial \uXXXX — hold it back
                 break
-            i += 6 if text[i + 1] == "u" else 2
+            if text[i + 1] == "u":
+                try:
+                    codepoint = int(text[i + 2 : i + 6], 16)
+                except ValueError:
+                    end = i  # malformed escape — never emit a corrupt prefix
+                    break
+                high_surrogate = 0xD800 <= codepoint <= 0xDBFF
+                if high_surrogate and not _low_surrogate_follows(text, i, end):
+                    end = i  # high surrogate without its low half — hold the pair back
+                    break
+                i += 12 if high_surrogate else 6
+            else:
+                i += 2
         elif char == '"':
             try:
-                return cast(str, json.loads(text[start : i + 1]))
+                return _replace_lone_surrogates(cast(str, json.loads(text[start : i + 1])))
             except ValueError:
                 return None
         else:
             i += 1
     # The value is still streaming: everything before `end` decodes on its own.
     try:
-        return cast(str, json.loads(text[start:end] + '"'))
+        return _replace_lone_surrogates(cast(str, json.loads(text[start:end] + '"')))
     except ValueError:
         return None
 
@@ -167,7 +234,7 @@ def parse_completion(raw: str) -> tuple[str, int | None]:
         and not isinstance(reply_to_id, bool)
         and reply_to_id > 0
     )
-    return content, reply_to_id if valid_reply else None
+    return _replace_lone_surrogates(content), reply_to_id if valid_reply else None
 
 
 def _sanitize_persona_value(value: str) -> str:

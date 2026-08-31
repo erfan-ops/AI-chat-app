@@ -362,6 +362,20 @@ def test_extract_streamed_content_non_string_value_is_none() -> None:
     assert extract_streamed_content('{"content": "abc"') == "abc"  # value still complete
 
 
+def test_extract_streamed_content_holds_back_unpaired_high_surrogate() -> None:
+    """A complete \\ud83d escape is still held back while its low half is missing
+    — emitting it would yield a lone surrogate that cannot be UTF-8 encoded."""
+    assert extract_streamed_content('{"content": "caf\\ud83d') == "caf"
+    # Once the low half arrives, the pair decodes to the real emoji.
+    assert extract_streamed_content('{"content": "caf\\ud83d\\ude0d"') == "caf😍"
+
+
+def test_extract_streamed_content_sanitizes_lone_low_surrogate() -> None:
+    """A pathological lone escape (wrong order / malformed output) degrades to
+    U+FFFD instead of crashing SSE serialization."""
+    assert extract_streamed_content('{"content": "\\ude0d') == "�"
+
+
 # -- Completion parsing -------------------------------------------------------------
 
 
@@ -394,3 +408,13 @@ def test_parse_completion_wrong_types_fall_back_or_degrade() -> None:
     assert parse_completion('{"content": "x", "reply_to_id": "abc"}') == ("x", None)
     assert parse_completion('{"content": "x", "reply_to_id": 0}') == ("x", None)
     assert parse_completion('{"content": "x", "reply_to_id": true}') == ("x", None)
+
+
+def test_parse_completion_replaces_lone_surrogates() -> None:
+    """A reply truncated mid-emoji persists and streams with U+FFFD instead of
+    crashing serialization; a complete surrogate pair is untouched."""
+    assert parse_completion('{"content": "I love \\ud83d"}') == ("I love �", None)
+    assert parse_completion('{"content": "I love \\ud83d\\ude0d", "reply_to_id": 4}') == (
+        "I love 😍",
+        4,
+    )

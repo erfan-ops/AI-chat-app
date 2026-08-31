@@ -648,3 +648,50 @@ async def test_stream_non_json_reply_falls_back_to_raw_text(
             )
         ).all()
         assert [(m.role, m.content) for m in messages] == [("user", "hi"), ("assistant", raw)]
+
+
+async def test_stream_emoji_split_across_chunks_streams_intact(
+    client: AsyncClient, session_factory: Any, scripted_provider: ScriptedProvider
+) -> None:
+    """A surrogate pair (escaped emoji) split by a chunk boundary must not crash
+    SSE serialization: the high half is held back until its low half arrives,
+    then the emoji streams whole."""
+    raw = json.dumps({"content": "I love you 💕", "reply_to_id": None})  # ASCII 😍 escapes
+    cut = raw.index("\\ud83d")  # split right between the pair's two escapes
+    scripted_provider.events = [
+        DeltaEvent(content=raw[:cut]),
+        DeltaEvent(content=raw[cut : cut + 6]),
+        DeltaEvent(content=raw[cut + 6 :]),
+        CompletionEvent(content=raw, usage=Usage(input_tokens=5, output_tokens=3)),
+    ]
+    headers, _user = await auth_user(client, "alice")
+    conversation = await create_conversation(client, headers)
+    conversation_id = conversation["id"]
+
+    response = await client.post(
+        f"/conversations/{conversation_id}/messages",
+        json={"content": "hi"},
+        headers=headers,
+    )
+    assert response.status_code == 200
+    body = (await response.aread()).decode()
+    events = parse_sse(body)
+    assert "error" not in [name for name, _data in events]
+
+    deltas = [data["content"] for name, data in events if name == "message.delta"]
+    assert "".join(deltas) == "I love you 💕"
+    completed = events[-1][1]
+    assert completed["message"]["content"] == "I love you 💕"
+
+    async with session_factory() as db:
+        messages = (
+            await db.scalars(
+                select(Message)
+                .where(Message.conversation_id == conversation_id)
+                .order_by(Message.id)
+            )
+        ).all()
+        assert [(m.role, m.content) for m in messages] == [
+            ("user", "hi"),
+            ("assistant", "I love you 💕"),
+        ]
