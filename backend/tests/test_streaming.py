@@ -4,17 +4,18 @@ external provider is ever contacted."""
 
 from __future__ import annotations
 
+import json
 from collections.abc import AsyncGenerator
 from typing import Any
 
 from httpx import AsyncClient
 from sqlalchemy import select
 
-from app.ai.base import DeltaEvent, ErrorEvent, StreamEvent
+from app.ai.base import CompletionEvent, DeltaEvent, ErrorEvent, StreamEvent, Usage
+from app.ai.context import MESSAGE_FORMAT_HINT
 from app.db.models.message import Message, MessageGeneration
 from app.services.ai_service import AIService
 from tests.conftest import (
-    DEFAULT_CHUNKS,
     DEFAULT_REPLY,
     TEST_SETTINGS,
     ScriptedProvider,
@@ -58,15 +59,17 @@ async def test_stream_success_flow(
     assert created["content"] == "Hi, how are you?"
     assert created["conversation_id"] == conversation_id
 
-    # Deltas concatenate to the full reply, in order.
+    # Deltas are the extracted content, in order — never the raw JSON envelope.
     deltas = [data["content"] for name, data in events if name == "message.delta"]
-    assert deltas == DEFAULT_CHUNKS
+    assert deltas == ["Hello", ", I was thinking", " about you."]
     assert "".join(deltas) == DEFAULT_REPLY
+    assert all('"content"' not in d for d in deltas)
 
     # Completion carries the persisted assistant message + usage.
     completed = events[-1][1]
     assert completed["message"]["role"] == "assistant"
     assert completed["message"]["content"] == DEFAULT_REPLY
+    assert completed["message"]["reply_to_id"] is None
     assert completed["usage"] == {"input_tokens": 12, "output_tokens": 5, "total_tokens": 17}
     assert completed["latency_ms"] >= 0
 
@@ -98,10 +101,15 @@ async def test_stream_success_flow(
     request = scripted_provider.requests[0]
     assert request.messages[0].role == "system"
     assert "Maya" in request.messages[0].content
-    assert request.messages[-1].role == "user"
-    assert request.messages[-1].content == "Hi, how are you?"
-    # No replies in this conversation → the system prompt stays unchanged.
-    assert "reply_context" not in request.messages[0].content
+    assert MESSAGE_FORMAT_HINT in request.messages[0].content
+    # History messages reach the provider as JSON envelopes with their ids.
+    envelope = json.loads(request.messages[-1].content)
+    assert envelope == {
+        "id": created["id"],
+        "role": "user",
+        "content": "Hi, how are you?",
+        "reply_to_id": None,
+    }
 
 
 async def test_stream_consumes_provider_incrementally(
@@ -132,12 +140,14 @@ async def test_stream_consumes_provider_incrementally(
     first_delta = await anext(stream)  # exactly one provider event consumed
     assert len(scripted_provider.yielded) == 1
     assert isinstance(scripted_provider.yielded[0], DeltaEvent)
-    assert f'"content":"{DEFAULT_CHUNKS[0]}"' in first_delta
+    # The delta carries the extracted content — the raw JSON envelope never leaks.
+    assert '"content":"Hello"' in first_delta
+    assert '"{"content"' not in first_delta
     assert "event: message.delta" in first_delta
 
     second_delta = await anext(stream)
     assert len(scripted_provider.yielded) == 2
-    assert f'"content":"{DEFAULT_CHUNKS[1]}"' in second_delta
+    assert '"content":", I was thinking"' in second_delta
     # Each yield carries exactly one SSE event — deltas are flushed as they arrive.
     assert first_delta.rstrip("\n").endswith('"}')
     assert "\n\n" not in first_delta.strip()
@@ -153,7 +163,10 @@ async def test_stream_provider_error_persists_only_user_message(
     conversation = await create_conversation(client, headers)
     conversation_id = conversation["id"]
 
-    scripted_provider.events = [DeltaEvent(content="partial"), ErrorEvent(message="boom")]
+    scripted_provider.events = [
+        DeltaEvent(content='{"content": "partial'),
+        ErrorEvent(message="boom"),
+    ]
 
     response = await client.post(
         f"/conversations/{conversation_id}/messages",
@@ -375,13 +388,14 @@ async def test_stream_reply_to_missing_message_returns_404(
     assert response.json() == {"detail": "Reply target not found"}
 
 
-# -- Reply context in the AI request ------------------------------------------------
+# -- Structured messages in the AI request -------------------------------------------
 
 
-async def test_stream_reply_sends_reply_context_to_provider(
+async def test_stream_reply_envelopes_history_messages_with_ids(
     client: AsyncClient, session_factory: Any, scripted_provider: ScriptedProvider
 ) -> None:
-    """Replying to an assistant message quotes it in the AI request, role intact."""
+    """Reply messages carry id/role/content/reply_to_id in the AI request, and
+    assistant history messages are enveloped too — the AI sees every id."""
     headers, _user = await auth_user(client, "alice")
     conversation = await create_conversation(client, headers)
     conversation_id = conversation["id"]
@@ -398,26 +412,33 @@ async def test_stream_reply_sends_reply_context_to_provider(
         headers=headers,
     )
     assert response.status_code == 200
-    await response.aread()  # drain the stream so persistence completes
+    events = parse_sse((await response.aread()).decode())
+    created_id = events[0][1]["message"]["id"]
 
     request = scripted_provider.requests[-1]
-    # The message keeps its real role; only the content is augmented.
+    # The new message keeps its real role; its envelope carries the reply ref.
     last = request.messages[-1]
     assert last.role == "user"
-    assert last.content == (
-        '<reply_context>\n<message sender="assistant">\nYou should get some rest.\n'
-        "</message>\n</reply_context>\n\nWhy?"
-    )
-    # The quoted message is not duplicated in history, and no DB id leaks.
+    assert json.loads(last.content) == {
+        "id": created_id,
+        "role": "user",
+        "content": "Why?",
+        "reply_to_id": target_id,
+    }
+    # The assistant target is enveloped too — the AI sees its id and content.
     assistant_messages = [m for m in request.messages if m.role == "assistant"]
     assert len(assistant_messages) == 1
-    assert assistant_messages[0].content == "You should get some rest."
-    assert str(target_id) not in last.content
-    # The system prompt explains the format because the conversation uses replies.
-    assert "`<reply_context>` block" in request.messages[0].content
+    assert json.loads(assistant_messages[0].content) == {
+        "id": target_id,
+        "role": "assistant",
+        "content": "You should get some rest.",
+        "reply_to_id": None,
+    }
+    # The system prompt explains the envelope contract unconditionally.
+    assert MESSAGE_FORMAT_HINT in request.messages[0].content
 
 
-async def test_stream_reply_to_user_message_uses_user_sender(
+async def test_stream_reply_to_user_message_keeps_user_role(
     client: AsyncClient, session_factory: Any, scripted_provider: ScriptedProvider
 ) -> None:
     headers, _user = await auth_user(client, "alice")
@@ -439,16 +460,18 @@ async def test_stream_reply_to_user_message_uses_user_sender(
     await response.aread()
 
     request = scripted_provider.requests[-1]
-    assert request.messages[-1].content == (
-        '<reply_context>\n<message sender="user">\nI\'m feeling tired today.\n'
-        "</message>\n</reply_context>\n\nWhy?"
-    )
+    target = json.loads(request.messages[-2].content)
+    assert target["role"] == "user"
+    assert target["id"] == target_id
+    assert target["content"] == "I'm feeling tired today."
+    assert json.loads(request.messages[-1].content)["reply_to_id"] == target_id
 
 
-async def test_stream_reply_context_missing_target_is_skipped(
+async def test_stream_reply_to_deleted_message_degrades_safely(
     client: AsyncClient, session_factory: Any, scripted_provider: ScriptedProvider
 ) -> None:
-    """A history reply whose target was deleted degrades to a plain message."""
+    """A history reply whose target was deleted still reaches the AI as a number
+    — the envelope is self-describing, no lookup pass, no crash."""
     headers, _user = await auth_user(client, "alice")
     conversation = await create_conversation(client, headers)
     conversation_id = conversation["id"]
@@ -482,8 +505,146 @@ async def test_stream_reply_context_missing_target_is_skipped(
     await response.aread()
 
     request = scripted_provider.requests[-1]
-    # Neither the new message nor the earlier reply is quoted — no crash, no block.
-    assert request.messages[-1].content == "Second message"
-    assert any(m.content == "Why?" for m in request.messages)
-    assert not any("reply_context" in m.content for m in request.messages[1:])
-    assert "`<reply_context>` block" not in request.messages[0].content
+    # The new message is plain; the older reply keeps its stale reference.
+    assert json.loads(request.messages[-1].content)["reply_to_id"] is None
+    assert any(
+        json.loads(m.content)["reply_to_id"] == target_id
+        for m in request.messages[1:]
+        if m.role == "user"
+    )
+    # No XML leftovers anywhere.
+    assert not any("reply_context" in m.content for m in request.messages)
+
+
+# -- The AI's structured reply ---------------------------------------------------------
+
+
+async def test_stream_ai_reply_to_id_is_persisted(
+    client: AsyncClient, session_factory: Any, scripted_provider: ScriptedProvider
+) -> None:
+    """The AI can reply to an earlier message: its reply_to_id is persisted and
+    surfaced on message.completed."""
+    headers, _user = await auth_user(client, "alice")
+    conversation = await create_conversation(client, headers)
+    conversation_id = conversation["id"]
+    target_id = await seed_message(
+        session_factory,
+        conversation_id=conversation_id,
+        role="assistant",
+        content="You should get some rest.",
+    )
+    raw = json.dumps({"content": "Good question!", "reply_to_id": target_id})
+    scripted_provider.events = [
+        DeltaEvent(content=raw[:18]),
+        DeltaEvent(content=raw[18:]),
+        CompletionEvent(content=raw, usage=Usage(input_tokens=8, output_tokens=3)),
+    ]
+
+    response = await client.post(
+        f"/conversations/{conversation_id}/messages",
+        json={"content": "Why?"},
+        headers=headers,
+    )
+    assert response.status_code == 200
+    events = parse_sse((await response.aread()).decode())
+
+    completed = events[-1][1]
+    assert completed["message"]["content"] == "Good question!"
+    assert completed["message"]["reply_to_id"] == target_id
+    # Deltas carried the clean content — never the raw envelope.
+    deltas = [data["content"] for name, data in events if name == "message.delta"]
+    assert "".join(deltas) == "Good question!"
+
+    async with session_factory() as db:
+        messages = (
+            await db.scalars(
+                select(Message)
+                .where(Message.conversation_id == conversation_id)
+                .order_by(Message.id)
+            )
+        ).all()
+        assert [(m.role, m.content, m.reply_to_id) for m in messages] == [
+            ("assistant", "You should get some rest.", None),
+            ("user", "Why?", None),
+            ("assistant", "Good question!", target_id),
+        ]
+
+
+async def test_stream_ai_reply_to_foreign_message_degrades_to_null(
+    client: AsyncClient, session_factory: Any, scripted_provider: ScriptedProvider
+) -> None:
+    """A reply_to_id from another conversation is dropped, like a missing one."""
+    headers, user = await auth_user(client, "alice")
+    conversation = await create_conversation(client, headers)
+    conversation_id = conversation["id"]
+    other_id = await seed_conversation(session_factory, user_id=user["id"])
+    foreign_id = await seed_message(
+        session_factory, conversation_id=other_id, role="assistant", content="secret"
+    )
+    raw = json.dumps({"content": "Hi!", "reply_to_id": foreign_id})
+    scripted_provider.events = [
+        DeltaEvent(content=raw),
+        CompletionEvent(content=raw, usage=Usage(input_tokens=3, output_tokens=1)),
+    ]
+
+    response = await client.post(
+        f"/conversations/{conversation_id}/messages",
+        json={"content": "hi"},
+        headers=headers,
+    )
+    assert response.status_code == 200
+    events = parse_sse((await response.aread()).decode())
+
+    completed = events[-1][1]
+    assert completed["message"]["content"] == "Hi!"
+    assert completed["message"]["reply_to_id"] is None
+
+    async with session_factory() as db:
+        messages = (
+            await db.scalars(
+                select(Message)
+                .where(Message.conversation_id == conversation_id)
+                .order_by(Message.id)
+            )
+        ).all()
+        assert messages[-1].reply_to_id is None
+
+
+async def test_stream_non_json_reply_falls_back_to_raw_text(
+    client: AsyncClient, session_factory: Any, scripted_provider: ScriptedProvider
+) -> None:
+    """A model that ignores the envelope still yields a usable, persisted reply."""
+    raw = "You're welcome! I'm always here."
+    scripted_provider.events = [
+        DeltaEvent(content="You're welcome! "),
+        DeltaEvent(content="I'm always here."),
+        CompletionEvent(content=raw, usage=Usage(input_tokens=10, output_tokens=4)),
+    ]
+    headers, _user = await auth_user(client, "alice")
+    conversation = await create_conversation(client, headers)
+    conversation_id = conversation["id"]
+
+    response = await client.post(
+        f"/conversations/{conversation_id}/messages",
+        json={"content": "hi"},
+        headers=headers,
+    )
+    assert response.status_code == 200
+    events = parse_sse((await response.aread()).decode())
+
+    # Non-JSON output is held until completion, then delivered in one piece.
+    deltas = [data["content"] for name, data in events if name == "message.delta"]
+    assert deltas == [raw]
+    completed = events[-1][1]
+    assert completed["message"]["content"] == raw
+    assert completed["message"]["reply_to_id"] is None
+
+    async with session_factory() as db:
+        messages = (
+            await db.scalars(
+                select(Message)
+                .where(Message.conversation_id == conversation_id)
+                .order_by(Message.id)
+            )
+        ).all()
+        assert [(m.role, m.content) for m in messages] == [("user", "hi"), ("assistant", raw)]

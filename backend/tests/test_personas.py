@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from collections.abc import Iterator
 from contextlib import contextmanager
 from typing import Any
@@ -9,7 +10,7 @@ from typing import Any
 from httpx import AsyncClient
 from sqlalchemy import event, select
 
-from app.ai.context import PERSONA_FOOTER, PERSONA_HEADER
+from app.ai.context import MESSAGE_FORMAT_HINT, PERSONA_FOOTER, PERSONA_HEADER
 from app.db.models.conversation import Conversation
 from app.db.models.persona import UserPersona
 from tests.conftest import (
@@ -314,7 +315,7 @@ async def test_chat_without_persona_is_unchanged(
 
     system = scripted_provider.requests[0].messages[0]
     assert system.role == "system"
-    assert system.content == "You are Maya, a warm and caring companion."
+    assert system.content == "You are Maya, a warm and caring companion.\n\n" + MESSAGE_FORMAT_HINT
     assert PERSONA_HEADER not in system.content
 
 
@@ -349,7 +350,7 @@ async def test_chat_with_persona_includes_it_in_the_system_context(
     ]
     # The persona is never sent as a user message.
     assert [m.role for m in request.messages[1:]] == ["user"]
-    assert request.messages[-1].content == "Hi"
+    assert json.loads(request.messages[-1].content)["content"] == "Hi"
 
 
 async def test_chat_persona_includes_only_provided_fields(

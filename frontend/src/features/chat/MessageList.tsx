@@ -47,8 +47,9 @@ export function MessageList({
   const hasOlder = query.data?.hasMore ?? false
   const { fetchNextPage, isFetchingNextPage } = query
 
-  // Reply quotes look up the referenced message by id (it is always on a loaded
-  // page — you can only reply to a message you can see).
+  // Reply quotes look up the referenced message by id. A user-replied message is
+  // always on a loaded page; the AI's reply target may be older than the loaded
+  // window (its context extends further back) — the quote then degrades to none.
   const messagesById = useMemo(() => {
     const map = new Map<number, Message>()
     for (const message of messages) map.set(message.id, message)

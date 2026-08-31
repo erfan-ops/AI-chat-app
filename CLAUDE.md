@@ -1,0 +1,94 @@
+# CLAUDE.md
+
+This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+
+## Project
+
+Merged monorepo for an AI-companion chat application: a FastAPI backend
+(`backend/`) and a React 19 + Vite + TypeScript frontend (`frontend/`). The
+backend serves a JSON API with SSE-streamed AI replies; the frontend is a
+single-page chat app that consumes those streams.
+
+`backend/CLAUDE.md` is the authoritative backend guide — architectural
+invariants, layering, and gotchas. Read it before changing backend code. The
+root README holds the full feature/architecture overview.
+
+## Commands
+
+### Backend (`backend/` — Python 3.13, deps via `uv`)
+
+```bash
+cd backend
+uv sync                                  # install deps + dev tools
+uv run uvicorn app.main:app --port 8000  # run the API (Swagger at /docs)
+
+uv run pytest                                   # full suite — SQLite in-memory, no Oracle needed
+uv run pytest tests/test_streaming.py::test_stream_success_flow   # one test
+uv run ruff check app tests              # lint
+uv run ruff format app tests             # format (double quotes, line length 100)
+uv run mypy app                          # strict type checking (tests/ excluded)
+```
+
+### Frontend (`frontend/` — React 19 + TypeScript + Vite)
+
+```bash
+cd frontend
+npm run dev      # Vite dev server; proxies /api → http://localhost:8000
+npm run build    # tsc -b && vite build (type-check + bundle)
+npm run lint     # oxlint
+npm run e2e      # Playwright end-to-end verification against a live backend
+```
+
+## Architecture
+
+```
+backend/  FastAPI: routes → services → repositories → SQLAlchemy models (layered; deps point down)
+frontend/ React 19 SPA: feature folders, TanStack Query for server state, SSE via fetch streaming
+```
+
+### Backend essentials
+
+- **AI streaming flow** (`app/services/ai_service.py`): `POST /conversations/{id}/messages`
+  persists the user message pre-flight, streams SSE (`message.created` →
+  `message.delta`* → `message.completed`), then persists the assistant message.
+  Deliberately session-lean: no DB connection is held while the provider streams.
+  Client disconnect cancels the provider stream and persists nothing partial.
+- **Structured message contract** (`app/ai/context.py`, pure functions):
+  every history message is sent to the AI as a JSON envelope
+  `{"id", "role", "content", "reply_to_id"}` (ids included so the AI can reply
+  by id). The AI replies with `{"content", "reply_to_id"}`; the content is
+  extracted progressively from the streamed JSON (`extract_streamed_content`)
+  and the reply is parsed at completion (`parse_completion`, raw-text
+  fallback). Never change the wire format without updating both
+  `render_message_body` / `MESSAGE_FORMAT_HINT` and the frontend.
+- **Provider abstraction** (`app/ai/base.py`): `stream_chat(ChatRequest)` yields
+  `DeltaEvent | CompletionEvent | ErrorEvent`; OpenAI-compat (DeepSeek),
+  Anthropic, and mock providers. Providers pass `content` through untouched.
+- **Ownership**: enforced at the repository layer; foreign ids return 404.
+  Oracle schema is the source of truth — the app never alters tables.
+
+### Frontend essentials
+
+- **Server state**: TanStack Query (`useMessages`, `useConversations`);
+  **in-flight AI replies** live in a module-level store (`streamingStore.ts`,
+  `useSyncExternalStore`) so streams survive conversation switches.
+- **SSE**: `sendMessageStream` (frontend/src/api/messages.ts) consumes the
+  streamed response body via fetch + `parseSseStream`; deltas append to the
+  streaming bubble, `message.completed` removes it and invalidates queries.
+- **Reply flow**: any message (user or assistant) can carry `reply_to_id`;
+  `MessageList` renders the quote by looking the target up in loaded pages
+  (degrades gracefully when the target is older than the loaded window).
+
+## Gotchas
+
+- Backend: `uv run` from `backend/` (root has no Python env). Frontend: `npm`
+  from `frontend/`. Each half has its own `.gitignore`, README, and env files
+  (`.env.example` exists in `frontend/`; `backend/.env` is created from
+  defaults in `app/core/config.py`).
+- Tests: the backend suite never touches Oracle (in-memory SQLite + a scripted
+  provider — see `tests/conftest.py`). One pre-existing failure,
+  `tests/test_personas.py::test_create_persona_validation`, fails identically
+  in the upstream repo and is unrelated to current work.
+- Frontend types mirror the backend Pydantic schemas one-to-one
+  (`frontend/src/types/api.ts`); timestamps are naive-UTC ISO strings — parse
+  with `parseIsoUtc` from `utils/dates.ts`.

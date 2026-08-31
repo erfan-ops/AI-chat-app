@@ -1,18 +1,18 @@
 """Conversation history → model context construction.
 
 Pure functions, no I/O: the persona system prompt, injected memories, the
-bounded message window, and reply-context quoting are assembled here so that
-truncation / summarization / token budgeting can evolve without touching the
-rest of the service layer.
+bounded message window, and the structured message envelope are assembled here
+so that truncation / token budgeting can evolve without touching the rest of
+the service layer. The AI's structured reply is parsed back here as well.
 """
 
 from __future__ import annotations
 
+import json
 import re
-from collections.abc import Mapping, Sequence
+from collections.abc import Sequence
 from dataclasses import dataclass
 from typing import Literal, cast
-from xml.sax.saxutils import escape
 
 from app.ai.base import ChatMessage
 from app.db.models.memory import Memory
@@ -44,13 +44,18 @@ _MARKER_PATTERN = re.compile(
     rf"{re.escape(PERSONA_HEADER)}|{re.escape(PERSONA_FOOTER)}", re.IGNORECASE
 )
 
-# System-prompt guidance for reply quoting — added only when the conversation
-# actually contains replies, so reply-free prompts stay byte-for-byte unchanged.
-REPLY_CONTEXT_HINT = (
-    "Some messages may contain a `<reply_context>` block indicating that the current "
-    "message is specifically replying to an earlier message. Use the referenced message "
-    "as conversational context to understand what the current message refers to. Do not "
-    "mention the internal XML structure unless directly relevant."
+# Unconditional: every history message is enveloped, so the AI always needs the
+# contract — both how to read history and how to shape its reply.
+MESSAGE_FORMAT_HINT = (
+    "Every message in this conversation is sent to you as a JSON object of the form "
+    '{"id": <number>, "role": "user"|"assistant", "content": "<message text>", '
+    '"reply_to_id": <number|null>}: id is the message\'s id, and reply_to_id is the '
+    "id of the message it replies to (null when it is not a reply). "
+    "Reply with a single JSON object of the form "
+    '{"content": "<your reply>", "reply_to_id": <number|null>}: set reply_to_id to '
+    "the id of the message you are replying to, or null when you are not replying to "
+    "a specific message. The server assigns the id of your message, so do not include "
+    "an id in your reply. Output nothing but the JSON object."
 )
 
 
@@ -67,34 +72,102 @@ def estimate_tokens(text: str) -> int:
     return max(1, len(text) // CHARS_PER_TOKEN)
 
 
-def _render_reply_context(reply_to: Message | None, content: str) -> str:
-    """Prefix ``content`` with the quoted referenced message as XML context.
+def render_message_body(message: Message) -> str:
+    """Serialize one history message as a JSON envelope for the AI.
 
-    The referenced text is user/model-authored, so ``<``, ``>`` and ``&`` are
-    escaped — otherwise it could close the block early or forge structure.
-    Only user/assistant roles are ever persisted, so the sender attribute is
-    derived from the role with a safe default.
+    The envelope carries the message's own id and reply_to_id — every history
+    message, assistant ones included — so the AI can reference earlier messages
+    by id in its structured reply. ``json.dumps`` handles all escaping, so
+    message text can never forge envelope fields.
     """
-    if reply_to is None:
-        return content
-    sender = "assistant" if reply_to.role == "assistant" else "user"
-    quoted = escape(reply_to.content.strip())
-    return (
-        f'<reply_context>\n<message sender="{sender}">\n{quoted}\n</message>\n'
-        f"</reply_context>\n\n{content}"
+    return json.dumps(
+        {
+            "id": message.id,
+            "role": message.role,
+            "content": message.content,
+            "reply_to_id": message.reply_to_id,
+        }
     )
 
 
-def _uses_reply_context(
-    messages: Sequence[Message], reply_targets: Mapping[int, Message] | None
-) -> bool:
-    """Whether any history message renders a reply-context block (target resolved)."""
-    if not reply_targets:
-        return False
-    return any(
-        message.reply_to_id is not None and message.reply_to_id in reply_targets
-        for message in messages
+def extract_streamed_content(buffer: str) -> str | None:
+    """Extract the ``content`` string from a partially streamed JSON envelope.
+
+    Returns the full content value once its closing quote has arrived, and a
+    decodable prefix while the value is still streaming; ``None`` until the
+    envelope's ``"content"`` key has been recognized. A trailing backslash or a
+    partial ``\\uXXXX`` escape at the end of the buffer is held back, so a
+    prefix is never emitted that later turns out to be corrupt.
+    """
+    text = buffer.lstrip()
+    if not text.startswith("{"):
+        return None
+    key = text.find('"content"')
+    if key == -1:
+        return None
+    colon = text.find(":", key + len('"content"'))
+    if colon == -1:
+        return None
+    start = colon + 1
+    while start < len(text) and text[start].isspace():
+        start += 1
+    if start >= len(text) or text[start] != '"':
+        return None  # the value is not (yet) a string
+    i = start + 1
+    end = len(text)
+    while i < end:
+        char = text[i]
+        if char == "\\":
+            if i + 1 >= end or (text[i + 1] == "u" and i + 6 > end):
+                end = i  # dangling backslash / partial \uXXXX — hold it back
+                break
+            i += 6 if text[i + 1] == "u" else 2
+        elif char == '"':
+            try:
+                return cast(str, json.loads(text[start : i + 1]))
+            except ValueError:
+                return None
+        else:
+            i += 1
+    # The value is still streaming: everything before `end` decodes on its own.
+    try:
+        return cast(str, json.loads(text[start:end] + '"'))
+    except ValueError:
+        return None
+
+
+def parse_completion(raw: str) -> tuple[str, int | None]:
+    """Parse the AI's reply envelope into ``(content, reply_to_id)``.
+
+    Anything that does not look like the envelope (plain text, truncated JSON,
+    wrong types) degrades to ``(raw, None)`` so a model that ignores the format
+    still produces a usable reply. A preamble before the first ``{`` is
+    tolerated. ``reply_to_id`` must be a positive integer; anything else
+    degrades to ``None`` while the content is kept.
+    """
+    candidate = raw
+    if not candidate.lstrip().startswith("{"):
+        brace = candidate.find("{")
+        if brace == -1:
+            return raw, None
+        candidate = candidate[brace:]
+    try:
+        data = json.loads(candidate)
+    except ValueError:
+        return raw, None
+    if not isinstance(data, dict):
+        return raw, None
+    content = data.get("content")
+    reply_to_id = data.get("reply_to_id")
+    if not isinstance(content, str) or not content.strip():
+        return raw, None
+    valid_reply = (
+        reply_to_id is not None
+        and isinstance(reply_to_id, int)
+        and not isinstance(reply_to_id, bool)
+        and reply_to_id > 0
     )
+    return content, reply_to_id if valid_reply else None
 
 
 def _sanitize_persona_value(value: str) -> str:
@@ -128,7 +201,6 @@ def _build_system_prompt(
     character_system_prompt: str | None,
     memories: Sequence[Memory],
     user_persona: UserPersona | None = None,
-    explain_reply_context: bool = False,
 ) -> str:
     system = (character_system_prompt or DEFAULT_SYSTEM_PROMPT).strip()
     memory_lines = [memory.content.strip() for memory in memories if memory.content.strip()]
@@ -139,10 +211,8 @@ def _build_system_prompt(
         persona_block = render_persona(user_persona)
         if persona_block:
             system += f"\n\n{PERSONA_PREAMBLE}\n{PERSONA_HEADER}\n{persona_block}\n{PERSONA_FOOTER}"
-    # Same principle for replies: the hint only appears when the conversation
-    # actually quotes an earlier message.
-    if explain_reply_context:
-        system += f"\n\n{REPLY_CONTEXT_HINT}"
+    # Every history message is enveloped, so the format contract is unconditional.
+    system += f"\n\n{MESSAGE_FORMAT_HINT}"
     return system
 
 
@@ -151,13 +221,13 @@ def select_messages(
     *,
     max_messages: int,
     char_budget: int,
-    reply_targets: Mapping[int, Message] | None = None,
 ) -> list[ChatMessage]:
     """Pick the most recent messages that fit the budget (newest always kept).
 
     Walks the history backwards so the newest message is never dropped; returns
-    the selection in chronological order. Reply messages quote their referenced
-    message (from ``reply_targets``) inside a ``<reply_context>`` block.
+    the selection in chronological order. Every message is serialized as a JSON
+    envelope carrying id/role/content/reply_to_id — replies are self-describing,
+    so no separate lookup pass is needed.
     """
     selected: list[ChatMessage] = []
     used_chars = 0
@@ -168,17 +238,16 @@ def select_messages(
             continue
         if len(selected) >= max_messages:
             break
+        # Budgeted on the raw text only; the small envelope overhead is not
+        # counted so the heuristic stays cheap and stable.
         cost = estimate_tokens(message.content)
         if selected and used_chars + cost > char_budget:
             break
-        role = cast(Literal["user", "assistant"], message.role)
-        reply_to = (
-            reply_targets.get(message.reply_to_id)
-            if reply_targets and message.reply_to_id is not None
-            else None
-        )
         selected.append(
-            ChatMessage(role=role, content=_render_reply_context(reply_to, message.content))
+            ChatMessage(
+                role=cast(Literal["user", "assistant"], message.role),
+                content=render_message_body(message),
+            )
         )
         used_chars += cost
     selected.reverse()
@@ -195,20 +264,16 @@ def build_conversation_context(
     default_context_chars: int,
     max_memories: int,
     user_persona: UserPersona | None = None,
-    reply_targets: Mapping[int, Message] | None = None,
 ) -> ConversationContext:
     """Assemble the character prompt + top memories + user persona + history.
 
-    ``user_persona`` is optional: without one the system prompt is exactly what it
-    was before personas existed. ``reply_targets`` maps referenced message ids to
-    the messages themselves (pre-loaded by the caller); reply messages quote their
-    target and the system prompt explains the format only when replies are used.
+    ``user_persona`` is optional: without one the system prompt is exactly what
+    it was before personas existed (plus the unconditional message-format hint).
     """
     system_prompt = _build_system_prompt(
         character_system_prompt,
         memories[:max_memories],
         user_persona,
-        explain_reply_context=_uses_reply_context(messages, reply_targets),
     )
     char_budget = context_window * CHARS_PER_TOKEN if context_window else default_context_chars
     return ConversationContext(
@@ -217,6 +282,5 @@ def build_conversation_context(
             messages,
             max_messages=max_messages,
             char_budget=char_budget,
-            reply_targets=reply_targets,
         ),
     )

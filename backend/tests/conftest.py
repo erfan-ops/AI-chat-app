@@ -49,8 +49,15 @@ TEST_SETTINGS = Settings(
 
 TEST_PASSWORD = "password123"
 
-DEFAULT_CHUNKS = ["Hello", ", I", " was thinking", " about you."]
-DEFAULT_REPLY = "".join(DEFAULT_CHUNKS)
+# The scripted provider emulates an AI that follows the structured-reply
+# contract: a JSON envelope streamed in pieces. The API receives the raw
+# provider text and must extract the content field before forwarding it.
+DEFAULT_CHUNKS = [
+    '{"content": "Hello',
+    ", I was thinking",
+    ' about you.", "reply_to_id": null}',
+]
+DEFAULT_REPLY = "Hello, I was thinking about you."
 
 
 class ScriptedProvider:
@@ -80,7 +87,12 @@ async def scripted_provider() -> ScriptedProvider:
     """Default happy-path provider: four deltas + a completion with usage."""
     return ScriptedProvider(
         [DeltaEvent(content=chunk) for chunk in DEFAULT_CHUNKS]
-        + [CompletionEvent(content=DEFAULT_REPLY, usage=Usage(input_tokens=12, output_tokens=5))]
+        + [
+            CompletionEvent(
+                content="".join(DEFAULT_CHUNKS),
+                usage=Usage(input_tokens=12, output_tokens=5),
+            )
+        ]
     )
 
 

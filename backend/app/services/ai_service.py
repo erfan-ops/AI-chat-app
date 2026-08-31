@@ -10,7 +10,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import time
-from collections.abc import AsyncIterator, Callable, Sequence
+from collections.abc import AsyncIterator, Callable
 from contextlib import aclosing
 from dataclasses import dataclass
 
@@ -27,8 +27,14 @@ from app.ai.base import (
     DeltaEvent,
     EndpointConfig,
     ErrorEvent,
+    Usage,
 )
-from app.ai.context import ConversationContext, build_conversation_context
+from app.ai.context import (
+    ConversationContext,
+    build_conversation_context,
+    extract_streamed_content,
+    parse_completion,
+)
 from app.core.config import Settings
 from app.core.logging import get_logger, structured
 from app.core.time import utcnow
@@ -137,7 +143,6 @@ class AIService:
             history = await MessageRepository(db).list_for_conversation(
                 conversation_id, limit=MAX_HISTORY_FETCH
             )
-            reply_targets = await self._load_reply_targets(db, history, conversation_id)
             memories = await MemoryRepository(db).top_for_context(
                 user_id, character_id, limit=settings.ai_max_memories
             )
@@ -158,7 +163,6 @@ class AIService:
             default_context_chars=settings.ai_default_context_chars,
             max_memories=settings.ai_max_memories,
             user_persona=persona,
-            reply_targets=reply_targets,
         )
         structured(
             logger,
@@ -191,9 +195,13 @@ class AIService:
     ) -> AsyncIterator[str]:
         """Stream the AI reply as SSE; persist it (plus telemetry) on completion.
 
-        Events: ``message.created`` → ``message.delta``* → ``message.completed``,
-        or ``error`` if the provider fails. If the client disconnects, the
-        provider stream is cancelled and nothing partial is persisted.
+        The AI replies with a JSON envelope (``{"content": ..., "reply_to_id":
+        ...}``), so provider deltas are buffered and only the progressively
+        extracted ``content`` text is forwarded as ``message.delta`` — the raw
+        JSON never reaches the client. Events: ``message.created`` →
+        ``message.delta``* → ``message.completed``, or ``error`` if the provider
+        fails. If the client disconnects, the provider stream is cancelled and
+        nothing partial is persisted.
         """
         settings = self._settings
         yield sse_encode(
@@ -219,6 +227,8 @@ class AIService:
         provider = provider_factory(prepared.endpoint, timeout)
         started = time.perf_counter()
         completion: CompletionEvent | None = None
+        buffer = ""  # raw provider output so far (the JSON envelope, usually)
+        emitted = ""  # content already forwarded to the client as message.delta
         try:
             async with aclosing(provider.stream_chat(chat_request)) as stream:
                 async for event in stream:
@@ -231,9 +241,18 @@ class AIService:
                         )
                         return
                     if isinstance(event, DeltaEvent):
-                        yield sse_encode(
-                            "message.delta", MessageDeltaPayload(content=event.content)
-                        )
+                        buffer += event.content
+                        if buffer.lstrip().startswith("{"):
+                            # Envelope mode: forward only the extracted content.
+                            extracted = extract_streamed_content(buffer)
+                            if extracted is not None and len(extracted) > len(emitted):
+                                yield sse_encode(
+                                    "message.delta",
+                                    MessageDeltaPayload(content=extracted[len(emitted) :]),
+                                )
+                                emitted = extracted
+                        # Otherwise the output is not the envelope (raw text
+                        # fallback): hold it and resolve at completion.
                     elif isinstance(event, CompletionEvent):
                         completion = event
                     elif isinstance(event, ErrorEvent):
@@ -307,9 +326,27 @@ class AIService:
             )
             return
 
+        # Parse the authoritative content + reply target out of the buffered
+        # envelope, then top up any text the progressive extraction could not
+        # emit yet (e.g. the envelope never completed, or raw-text fallback).
+        raw = buffer if buffer else completion.content
+        content, reply_to_id = parse_completion(raw)
+        if content == raw and emitted:
+            # The envelope never completed after all: keep the clean prefix
+            # that was already streamed instead of exposing the raw JSON.
+            content, reply_to_id = emitted, None
+        remaining = content[len(emitted) :]
+        if remaining:
+            yield sse_encode("message.delta", MessageDeltaPayload(content=remaining))
+
         latency_ms = int((time.perf_counter() - started) * 1000)
         assistant_message = await self._persist_assistant_message(
-            prepared, completion, latency_ms=latency_ms, session_factory=session_factory
+            prepared,
+            content=content,
+            reply_to_id=reply_to_id,
+            usage=completion.usage,
+            latency_ms=latency_ms,
+            session_factory=session_factory,
         )
         yield sse_encode(
             "message.completed",
@@ -329,20 +366,6 @@ class AIService:
         )
 
     # -- Internal helpers ----------------------------------------------------------
-
-    async def _load_reply_targets(
-        self, db: AsyncSession, messages: Sequence[Message], conversation_id: int
-    ) -> dict[int, Message]:
-        """Batch-load the messages referenced by ``reply_to_id`` — one query, no N+1.
-
-        Missing targets (deleted rows) are simply absent from the result; the
-        context builder quotes only what was actually found.
-        """
-        reply_ids = {m.reply_to_id for m in messages if m.reply_to_id is not None}
-        if not reply_ids:
-            return {}
-        targets = await MessageRepository(db).get_many_for_conversation(reply_ids, conversation_id)
-        return {m.id: m for m in targets}
 
     def _resolve_endpoint(self, model: AIModel, settings: Settings) -> EndpointConfig:
         if settings.ai_provider != "database":
@@ -366,20 +389,30 @@ class AIService:
     async def _persist_assistant_message(
         self,
         prepared: PreparedStream,
-        completion: CompletionEvent,
         *,
+        content: str,
+        reply_to_id: int | None,
+        usage: Usage | None,
         latency_ms: int,
         session_factory: SessionFactory,
     ) -> Message:
         """Persist the completed AI reply + generation telemetry in one transaction."""
         now = utcnow()
-        usage = completion.usage
         async with session_factory() as db:
+            if reply_to_id is not None:
+                # The AI may only reference a message in this conversation; a
+                # stale or invented id degrades to a plain reply.
+                target = await MessageRepository(db).get_for_conversation(
+                    reply_to_id, prepared.conversation_id
+                )
+                if target is None:
+                    reply_to_id = None
             message = await MessageRepository(db).add(
                 Message(
                     conversation_id=prepared.conversation_id,
                     role="assistant",
-                    content=completion.content,
+                    content=content,
+                    reply_to_id=reply_to_id,
                     created_at=now,
                 )
             )
@@ -408,6 +441,7 @@ class AIService:
             "persisted AI response",
             conversation_id=prepared.conversation_id,
             message_id=message.id,
+            reply_to_id=reply_to_id,
             latency_ms=latency_ms,
         )
         return message

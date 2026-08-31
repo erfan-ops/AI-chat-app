@@ -3,11 +3,20 @@
 from __future__ import annotations
 
 import asyncio
+import json
 from collections.abc import AsyncGenerator
 
 from app.ai.base import ChatRequest, CompletionEvent, DeltaEvent, StreamEvent, Usage
 
-MOCK_REPLY = "I hear you! Thanks for telling me — I'm always here for you. 💕"
+# The reply envelope the AI is asked to produce. ensure_ascii=False keeps the
+# emoji literal so chunk boundaries never split a surrogate-pair escape.
+MOCK_REPLY = json.dumps(
+    {
+        "content": "I hear you! Thanks for telling me — I'm always here for you. 💕",
+        "reply_to_id": None,
+    },
+    ensure_ascii=False,
+)
 
 
 class MockProvider:

@@ -95,8 +95,9 @@ export interface Message {
   role: MessageRole
   content: string
   created_at: string
-  /** Id of the message this one replies to; null when it is not a reply
-   *  (assistant messages never carry one). */
+  /** Id of the message this one replies to; null when it is not a reply.
+   *  Both user and assistant messages can carry one — the AI sets it in its
+   *  structured reply when it answers an earlier message. */
   reply_to_id: number | null
 }
 

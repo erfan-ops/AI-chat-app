@@ -58,12 +58,18 @@ while the provider streams:
    real HTTP status codes): session #1 — ownership check + persist user message;
    session #2 — load character/model/history/memories, build context via the pure
    functions in `app/ai/context.py`.
-2. **Stream** (`stream_response`): no DB access. Each provider `DeltaEvent` is
-   forwarded as a `message.delta` SSE event. Client disconnect
-   (`request.is_disconnected()`, `GeneratorExit`, `ClientDisconnect`) cancels the
-   provider stream via `aclosing()` and persists nothing partial.
-3. **Finalize** (`_persist_assistant_message`): session #3 — persist assistant message
-   + `MESSAGE_GENERATIONS` telemetry in one transaction, then emit `message.completed`.
+2. **Stream** (`stream_response`): no DB access. The AI replies with a JSON
+   envelope (`{"content": ..., "reply_to_id": ...}`), so provider `DeltaEvent`s
+   are buffered and only the progressively extracted `content` text is forwarded
+   as `message.delta` — the raw JSON never reaches the client. Non-JSON output
+   is held and resolved at completion (`parse_completion` in `app/ai/context.py`,
+   raw-text fallback). Client disconnect (`request.is_disconnected()`,
+   `GeneratorExit`, `ClientDisconnect`) cancels the provider stream via
+   `aclosing()` and persists nothing partial.
+3. **Finalize** (`_persist_assistant_message`): session #3 — validate the AI's
+   `reply_to_id` against the conversation (foreign/missing ids degrade to null),
+   persist assistant message + `MESSAGE_GENERATIONS` telemetry in one
+   transaction, then emit `message.completed`.
 
 Provider protocol (`app/ai/base.py`): `stream_chat(ChatRequest) -> AsyncGenerator`
 yielding `DeltaEvent | CompletionEvent | ErrorEvent` — only these types cross the
@@ -113,7 +119,11 @@ and uses the `AI_API_KEY` / `AI_BASE_URL` / `AI_MODEL` env fallbacks.
   (key=value fields). Never log passwords, tokens, API keys, or message contents.
 - Context building in `app/ai/context.py` is pure (no I/O): persona prompt + top
   memories + budgeted history (~4 chars/token heuristic, newest message never
-  dropped). Keep it pure so it stays unit-testable (`tests/test_context.py`).
+  dropped). Every history message is sent to the AI as a JSON envelope carrying
+  id/role/content/reply_to_id (`render_message_body`); the AI's reply envelope
+  is parsed by `parse_completion` and streamed through
+  `extract_streamed_content`. Keep it pure so it stays unit-testable
+  (`tests/test_context.py`).
 - `README.md` references `.env.example`, but that file does not exist in the repo —
   create `.env` from the defaults in `app/core/config.py` (`.env` is gitignored;
   `JWT_SECRET` must be overridden).
