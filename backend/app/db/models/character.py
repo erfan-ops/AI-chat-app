@@ -20,7 +20,7 @@ class Character(Base):
     status: Mapped[str] = mapped_column(String(20))
     created_at: Mapped[datetime] = mapped_column(DateTime)
     updated_at: Mapped[datetime] = mapped_column(DateTime)
-    system_prompt: Mapped[str | None] = mapped_column(String(3500))
+    system_prompt: Mapped[str | None] = mapped_column(String(9000))
     # NULL = built-in character visible to everyone; otherwise the creating user.
     owner_user_id: Mapped[int | None] = mapped_column(Integer, ForeignKey("USERS.id"))
 

@@ -107,7 +107,7 @@ async def test_create_character_validation(client: AsyncClient) -> None:
         {"name": "x" * 101},  # NAME VARCHAR2(100)
         {"name": "ok", "description": "d" * 501},  # DESCRIPTION VARCHAR2(500)
         {"name": "ok", "avatar_url": "u" * 1001},  # AVATAR_URL VARCHAR2(1000)
-        {"name": "ok", "system_prompt": "p" * 3501},  # SYSTEM_PROMPT VARCHAR2(3500)
+        {"name": "ok", "system_prompt": "p" * 9001},  # SYSTEM_PROMPT VARCHAR2(9000)
     ]
     for body in invalid_bodies:
         response = await client.post("/characters", json=body, headers=headers)
@@ -120,7 +120,7 @@ async def test_create_character_validation(client: AsyncClient) -> None:
             "name": "x" * 100,
             "description": "d" * 500,
             "avatar_url": "u" * 1000,
-            "system_prompt": "p" * 3500,
+            "system_prompt": "p" * 9000,
         },
         headers=headers,
     )

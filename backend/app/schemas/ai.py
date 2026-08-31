@@ -40,7 +40,7 @@ class CharacterCreate(BaseModel):
     description: str | None = Field(default=None, max_length=500)
     avatar_url: str | None = Field(default=None, max_length=1000)
     system_prompt: str | None = Field(
-        default=None, max_length=3500, description="Persona / system prompt sent to the model"
+        default=None, max_length=9000, description="Persona / system prompt sent to the model"
     )
     owner_user_id: int | None = Field(
         default=None,
@@ -67,7 +67,7 @@ class CharacterUpdate(BaseModel):
     name: str | None = Field(default=None, min_length=1, max_length=100)
     description: str | None = Field(default=None, max_length=500)
     avatar_url: str | None = Field(default=None, max_length=1000)
-    system_prompt: str | None = Field(default=None, max_length=3500)
+    system_prompt: str | None = Field(default=None, max_length=9000)
     owner_user_id: int | None = Field(
         default=None, ge=1, description="Admin only. null makes the character global."
     )
