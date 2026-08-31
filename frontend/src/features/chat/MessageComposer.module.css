@@ -1,0 +1,161 @@
+.wrap {
+  flex-shrink: 0;
+  padding: 10px var(--composer-gutter) 4px;
+  background: var(--bg-panel);
+  border-top: 1px solid var(--border);
+}
+
+/* ---- Reply preview (the message the next send replies to) ---- */
+
+.replyChip {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  max-width: 860px;
+  margin: 0 auto 6px;
+  padding: 7px 10px 7px 13px;
+  background: var(--bg-input);
+  border-left: 3px solid var(--accent);
+  border-radius: var(--radius-md);
+}
+
+.replyChipText {
+  min-width: 0;
+  flex: 1;
+}
+
+.replyChipName {
+  display: block;
+  margin-bottom: 1px;
+  font-size: 12px;
+  font-weight: 650;
+  color: var(--accent);
+}
+
+.replyChipSnippet {
+  display: -webkit-box;
+  -webkit-line-clamp: 1;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  font-size: 13px;
+  line-height: 1.35;
+  color: var(--text-2);
+  overflow-wrap: anywhere;
+}
+
+.replyChipClose {
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  border-radius: var(--radius-full);
+  color: var(--text-3);
+  flex-shrink: 0;
+  transition: background 100ms ease, color 100ms ease;
+}
+
+.replyChipClose:hover {
+  background: var(--bg-hover);
+  color: var(--text-1);
+}
+
+.replyChipClose svg {
+  width: 16px;
+  height: 16px;
+}
+
+.composer {
+  display: flex;
+  align-items: flex-end;
+  gap: 8px;
+  max-width: 860px;
+  margin: 0 auto;
+  padding: 8px 8px 8px 16px;
+  background: var(--bg-input);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-xl);
+  transition: border-color 120ms ease, background 120ms ease;
+}
+
+.composer:focus-within {
+  border-color: var(--accent);
+  background: var(--bg-panel);
+  box-shadow: var(--focus-ring);
+}
+
+.composerBusy {
+  opacity: 0.85;
+}
+
+.input {
+  flex: 1;
+  min-width: 0;
+  max-height: 168px;
+  padding: 6px 0;
+  border: none;
+  background: transparent;
+  resize: none;
+  font-size: 15px;
+  line-height: 24px;
+  color: var(--text-1);
+}
+
+.input::placeholder {
+  color: var(--text-3);
+}
+
+.input:focus {
+  outline: none;
+  box-shadow: none;
+}
+
+.send {
+  display: grid;
+  place-items: center;
+  width: 40px;
+  height: 40px;
+  border-radius: var(--radius-full);
+  background: var(--accent);
+  color: var(--text-on-accent);
+  flex-shrink: 0;
+  transition: background 120ms ease, transform 80ms ease, opacity 120ms ease;
+}
+
+.send:hover:not(:disabled) {
+  background: var(--accent-hover);
+}
+
+.send:active:not(:disabled) {
+  transform: scale(0.94);
+}
+
+.send:disabled {
+  background: var(--bg-empty-avatar);
+  color: var(--text-3);
+  opacity: 0.9;
+}
+
+.send svg {
+  width: 19px;
+  height: 19px;
+  transform: translateX(-1px);
+}
+
+.sendSpinner {
+  color: var(--text-3);
+}
+
+.hint {
+  max-width: 860px;
+  margin: 5px auto 0;
+  text-align: center;
+  font-size: 11px;
+  color: var(--text-3);
+  user-select: none;
+}
+
+@media (max-width: 640px) {
+  .hint {
+    display: none;
+  }
+}

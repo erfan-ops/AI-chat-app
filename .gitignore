@@ -1,0 +1,91 @@
+# ────────────────────────────────────────────────────────────────────────────
+# AI Chat App — .gitignore
+# Covers both the Python backend (backend/) and the React/TypeScript frontend
+# (frontend/) of this merged monorepo.
+# ────────────────────────────────────────────────────────────────────────────
+
+# ── Python (backend/) ────────────────────────────────────────────────────────
+
+# Virtual environments
+.venv/
+venv/
+env/
+ENV/
+
+# Byte-compiled / caches
+__pycache__/
+*.py[cod]
+*.pyo
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.pyre/
+.hypothesis/
+
+# Build artifacts (dist/ matches at any depth — Python wheels and Vite output)
+build/
+dist/
+*.egg-info/
+*.whl
+*.tar.gz
+
+# Coverage
+.coverage
+.coverage.*
+htmlcov/
+
+# ── Node.js / frontend (frontend/) ───────────────────────────────────────────
+
+# Dependencies
+node_modules/
+
+# Build output
+dist-ssr/
+*.local
+
+# Package manager debug logs
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
+
+# Playwright / e2e artifacts (generated screenshots, traces, reports)
+frontend/e2e/shots/
+test-results/
+playwright-report/
+
+# ── Environment files (may contain secrets) ──────────────────────────────────
+# Ignore .env and .env.* — but never ignore committed templates/examples.
+
+.env
+.env.*
+!.env.example
+
+# ── Logs ─────────────────────────────────────────────────────────────────────
+
+logs/
+*.log
+
+# ── IDE / editor ─────────────────────────────────────────────────────────────
+
+.vscode/*
+!.vscode/extensions.json
+.idea/
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+
+# ── OS ───────────────────────────────────────────────────────────────────────
+
+.DS_Store
+Thumbs.db
+Desktop.ini
+
+# ── Misc ─────────────────────────────────────────────────────────────────────
+
+*.tmp
+*.bak
+*.orig

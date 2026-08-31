@@ -1,0 +1,204 @@
+.item {
+  position: relative;
+  display: flex;
+  align-items: center;
+  border-radius: var(--radius-md);
+  transition: background 120ms ease;
+}
+
+.item:hover {
+  background: var(--bg-hover);
+}
+
+.itemActive,
+.itemActive:hover {
+  background: var(--bg-active);
+}
+
+.main {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex: 1;
+  min-width: 0;
+  padding: 9px 10px;
+  text-align: left;
+  border-radius: var(--radius-md);
+}
+
+.itemActive .main::before {
+  content: '';
+  position: absolute;
+  left: -10px;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 3.5px;
+  height: 60%;
+  border-radius: 0 3px 3px 0;
+  background: var(--accent);
+}
+
+.texts {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+  flex: 1;
+}
+
+.title {
+  font-size: 14px;
+  font-weight: 610;
+  color: var(--text-1);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.meta {
+  display: flex;
+  align-items: baseline;
+  gap: 7px;
+  min-width: 0;
+}
+
+.model {
+  font-size: 12px;
+  color: var(--text-3);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  flex: 1;
+}
+
+.time {
+  font-size: 12px;
+  color: var(--text-3);
+  flex-shrink: 0;
+}
+
+/* ---- Hover actions ---- */
+
+.actions {
+  position: absolute;
+  right: 6px;
+  top: 50%;
+  transform: translateY(-50%);
+  display: flex;
+  gap: 2px;
+  padding: 3px;
+  border-radius: var(--radius-sm);
+  background: var(--bg-panel);
+  border: 1px solid var(--border);
+  box-shadow: var(--shadow-sm);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 120ms ease;
+}
+
+.item:hover .actions,
+.item:focus-within .actions {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.actionButton {
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  border-radius: var(--radius-sm);
+  color: var(--text-3);
+  transition: background 100ms ease, color 100ms ease;
+}
+
+.actionButton:hover {
+  background: var(--bg-hover);
+  color: var(--text-1);
+}
+
+.deleteButton:hover {
+  background: color-mix(in srgb, var(--danger) 12%, transparent);
+  color: var(--danger);
+}
+
+.actionButton svg {
+  width: 15.5px;
+  height: 15.5px;
+}
+
+/* ---- Inline rename ---- */
+
+.itemEditing:hover {
+  background: transparent;
+}
+
+.renameInput {
+  width: 100%;
+  padding: 5px 8px;
+  margin: -5px -8px;
+  border: 1px solid var(--accent);
+  border-radius: var(--radius-sm);
+  background: var(--bg-panel);
+  font-size: 14px;
+  color: var(--text-1);
+}
+
+.renameInput:focus {
+  outline: none;
+}
+
+/* ---- Delete confirmation ---- */
+
+.confirmText {
+  font-size: 14px;
+  line-height: 1.55;
+  color: var(--text-2);
+}
+
+.confirmActions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  margin-top: 20px;
+}
+
+.confirmCancel {
+  padding: 9px 18px;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--border-strong);
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text-1);
+  transition: background 120ms ease;
+}
+
+.confirmCancel:hover:not(:disabled) {
+  background: var(--bg-hover);
+}
+
+.confirmDelete {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 9px 18px;
+  border-radius: var(--radius-md);
+  background: var(--danger);
+  color: #ffffff;
+  font-size: 14px;
+  font-weight: 650;
+  transition: background 120ms ease;
+}
+
+.confirmDelete:hover:not(:disabled) {
+  background: var(--danger-hover);
+}
+
+.confirmDelete:disabled,
+.confirmCancel:disabled {
+  opacity: 0.6;
+}
+
+.confirmSpinner {
+  color: #ffffff;
+}

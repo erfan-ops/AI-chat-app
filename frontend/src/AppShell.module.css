@@ -1,0 +1,54 @@
+.shell {
+  display: flex;
+  height: 100%;
+  overflow: hidden;
+}
+
+.sidebarPane {
+  width: var(--sidebar-width);
+  flex-shrink: 0;
+  height: 100%;
+}
+
+.chatPane {
+  flex: 1;
+  min-width: 0;
+  height: 100%;
+}
+
+/* ---- Narrow screens: sidebar becomes a slide-over drawer ----
+   The sidebar stays visible whenever it is "open"; the chat fills the
+   screen once a conversation is selected. */
+
+@media (max-width: 800px) {
+  .shell {
+    position: relative;
+  }
+
+  .sidebarPane {
+    position: absolute;
+    inset: 0;
+    z-index: 10;
+    width: 100%;
+    max-width: 420px;
+    box-shadow: var(--shadow-lg);
+    transform: translateX(-102%);
+    transition: transform 200ms ease;
+    visibility: hidden;
+  }
+
+  .shellSidebarOpen .sidebarPane {
+    transform: translateX(0);
+    visibility: visible;
+  }
+
+  .chatPane {
+    flex: 1;
+  }
+}
+
+@media (max-width: 480px) {
+  .sidebarPane {
+    max-width: 100%;
+  }
+}

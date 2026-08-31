@@ -1,0 +1,222 @@
+# AI Girlfriend App
+
+A full-stack AI companion chat application. Pick an AI character (persona), choose
+a model, start a conversation — and the character's replies stream in live, one
+token at a time.
+
+The project is a monorepo combining two applications that talk to each other:
+
+| Directory | Application | Stack |
+|---|---|---|
+| `backend/` | **AI Chat API** — REST + SSE API serving all data | Python · FastAPI · Oracle |
+| `frontend/` | **AI Chat** — the chat web app users interact with | React · TypeScript · Vite |
+
+Everything the UI shows — characters, models, conversations, messages — comes from
+the API. Nothing is hardcoded or mocked.
+
+## Features
+
+- **Accounts** — registration and login with Argon2id password hashing and signed
+  JWT access tokens; failed-login throttling (5 attempts → 60 s lockout).
+- **AI characters** — built-in characters (visible to everyone) plus user-created
+  private ones; each carries a system prompt that shapes its personality.
+- **Streaming chat** — AI replies are *truly* incremental: each generated chunk is
+  forwarded to the browser over Server-Sent Events as it arrives, and the completed
+  reply (with token usage + latency telemetry) is persisted server-side.
+- **Reply & copy** — messages can be replied to (the reply is anchored to the
+  original) and copied; switching conversations mid-reply doesn't interrupt the
+  in-flight stream.
+- **Long-term memories** — per-user, per-character memories are stored and injected
+  into the AI's context so the character "remembers" across conversations.
+- **User personas** — optionally role-play *as* a persona you define; it is
+  presented to the model as background context that never overrides the character.
+- **Provider-agnostic AI** — the backend speaks to DeepSeek / OpenAI-compatible
+  endpoints and Anthropic, or a deterministic mock provider for development. Which
+  provider, endpoint, API key, and model a conversation uses is resolved per
+  conversation from the database.
+- **Admin role** — administrators (set in the database) get full management of
+  characters and the model catalog; regular users manage only their own.
+- **Modern UI** — light/dark theme (follows the OS), mobile-friendly layout,
+  avatars with initial fallbacks, typing indicator, and a toasts/error system.
+
+## How it works
+
+```text
+                Browser — React SPA (frontend/)
+                  │
+                  │  same-origin /api/… requests + JWT Bearer token
+                  │  (Vite dev & preview servers proxy /api → :8000)
+                  ▼
+              FastAPI backend (backend/)
+                  │
+      ┌───────────┼───────────────────────────┐
+      │           │                           │
+  Auth & CRUD     │                      AI streaming (SSE)
+  users, chars,   │                message.created → message.delta*
+  personas,       │                → message.completed (+ usage/latency)
+  conversations,  │
+  messages,       │
+  memories        ▼
+                  └── AI layer (provider abstraction)
+                          │  DeepSeek / OpenAI-compatible │ Anthropic │ mock
+                          └───────────────┬───────────────┘
+                                          ▼
+            Oracle DB (9 tables)   AI provider API (DeepSeek, etc.)
+            Schema is the source    (URL + API key resolved from the DB)
+            of truth — the app
+            never alters it
+```
+
+The backend is deliberately **session-lean** while streaming: the user message is
+persisted, then the context is loaded, and only after the provider finishes is the
+completed reply written back — no database connection is held open across the
+stream. Conversation context is built from the character's system prompt, the
+user's top memories, the optional user persona, and a budgeted slice of recent
+history.
+
+On the frontend, all server state flows through React Query; AI replies stream
+over SSE (parsed from `fetch`, since the endpoint is a POST). Expired or missing
+tokens return the user to the sign-in screen automatically.
+
+## Tech stack
+
+| Layer | Technologies |
+|---|---|
+| Frontend | React 19, TypeScript, Vite, TanStack Query, CSS Modules, oxlint, Playwright (e2e) |
+| Backend | Python 3.13+, FastAPI, SQLAlchemy 2.x (async), python-oracledb (thin mode), Pydantic v2, Argon2id, PyJWT, httpx, uvicorn |
+| Tooling | `uv` (Python deps), npm (frontend deps), ruff + mypy (backend QA) |
+| Database | Oracle (existing 9-table schema); tests run on in-memory SQLite — no Oracle needed |
+| AI providers | DeepSeek / OpenAI-compatible, Anthropic, deterministic mock |
+
+## Repository layout
+
+```text
+backend/
+  app/                  # FastAPI application
+    api/                #   routes + dependencies
+    services/           #   business logic (auth, chat, streaming)
+    db/                 #   SQLAlchemy models + repositories
+    ai/                 #   provider abstraction + context building
+    schemas/            #   Pydantic contracts (incl. SSE payloads)
+    core/               #   config, security, logging
+  tests/                # 41 tests — in-memory SQLite, no external services
+  scripts/              # SQL inspection + one-off migration scripts
+  docs/database.md      # the discovered Oracle schema
+frontend/
+  src/
+    api/                # the only place that talks HTTP (fetch wrapper, SSE)
+    features/           # auth, chat, conversations, new-conversation picker
+    components/         # shared UI (avatar, modal, toasts, icons)
+    session/            # JWT + user session (localStorage, expiry)
+    styles/             # design tokens (light + dark)
+  e2e/                  # Playwright verification scripts
+  docs/openapi.json     # snapshot of the backend's OpenAPI spec
+```
+
+## Getting started
+
+### Prerequisites
+
+- Python 3.13+ and [uv](https://docs.astral.sh/uv/) for the backend
+- Node.js 20+ for the frontend
+- An Oracle database to run the full stack (tests don't need one)
+
+### 1. Backend
+
+```bash
+cd backend
+uv sync                                    # install deps into .venv
+```
+
+Create `backend/.env` with at least a `JWT_SECRET` (mandatory — see
+[Configuration](#configuration)). Then start the API:
+
+```bash
+uv run uvicorn app.main:app --host 0.0.0.0 --port 8000
+```
+
+Interactive API docs: <http://localhost:8000/docs> (Swagger UI).
+
+> **One-time setup:** before first use against Oracle, run the migration in
+> `scripts/migrate_reply_to.sql` once — it adds a nullable `MESSAGES.REPLY_TO_ID`
+> column used by the reply feature. The API never otherwise creates or alters
+> tables.
+
+### 2. Frontend
+
+```bash
+cd frontend
+npm install
+npm run dev                                # http://localhost:5173
+```
+
+Open <http://localhost:5173>, create an account, pick a character and model, and
+start chatting. The dev server proxies `/api/…` to the backend on `:8000`, so no
+CORS configuration is needed.
+
+Production build:
+
+```bash
+npm run build
+npm run preview                            # or: npx vite preview --host 0.0.0.0 --port 5931
+```
+
+## Configuration
+
+### Backend (`backend/.env`)
+
+| Variable | Default | Purpose |
+|---|---|---|
+| `DATABASE_URL` | local Oracle PDB URL | SQLAlchemy URL, e.g. `oracle+oracledb://user:pass@host:1521/?service_name=...` (thin mode — no Oracle client needed) |
+| `JWT_SECRET` | `dev-only-secret-change-me` | HMAC key for signing tokens — **must be overridden** |
+| `CORS_ORIGINS` | localhost dev origins | Comma-separated allowed origins |
+| `AI_PROVIDER` | `database` | `database` (resolve from DB) \| `mock` \| `openai` \| `anthropic` |
+| `AI_API_KEY` / `AI_BASE_URL` / `AI_MODEL` | *(empty)* | Fallback credentials, used only when `AI_PROVIDER != database` |
+| `ACCESS_TOKEN_EXPIRE_MINUTES` | `1440` | Token lifetime |
+| `AI_CONTEXT_MAX_MESSAGES` / `AI_DEFAULT_CONTEXT_CHARS` | `50` / `16000` | History window and context budget |
+
+With the default `AI_PROVIDER=database`, provider, endpoint, API key, and model are
+resolved from the database per conversation — the seeded DeepSeek row works out of
+the box. `AI_PROVIDER=mock` needs no credentials and is ideal for local frontend
+development. See `backend/README.md` for the full reference.
+
+### Frontend (`frontend/.env`)
+
+| Variable | Default | Purpose |
+|---|---|---|
+| `VITE_API_BASE_URL` | `/api` | Base URL for API calls. `/api` is same-origin and proxied to `:8000`; set an absolute URL to reach a differently hosted backend (the backend must then allow the app's origin in `CORS_ORIGINS`) |
+
+Only values safe for the browser belong in the frontend env — the app never sees
+database credentials or API keys. `frontend/.env.example` is the template.
+
+## Testing & checks
+
+```bash
+# Backend (from backend/)
+uv run pytest                 # 41 tests — in-memory SQLite, no Oracle needed
+uv run ruff check app tests   # lint
+uv run ruff format --check app tests
+uv run mypy app               # strict type checking
+
+# Frontend (from frontend/)
+npm run lint                  # oxlint
+npm run build                 # type-check (tsc -b) + production build
+npm run e2e                   # Playwright: full user flow against a running
+                              #   backend + dev server (sign-up → chat → stream)
+npm run e2e:layout            # layout checks (light, dark, mobile)
+```
+
+The e2e scripts drive the real UI in system Chrome via Playwright and fail on
+console errors or failed API requests. They can target any running instance with
+`APP_URL=http://localhost:5932 npm run e2e`.
+
+## Documentation
+
+- `backend/README.md` — full API reference, auth/roles, AI streaming protocol
+- `frontend/README.md` — frontend architecture and API integration notes
+- `backend/docs/database.md` — the discovered Oracle schema
+- `frontend/docs/openapi.json` — snapshot of the backend's OpenAPI spec
+
+## License
+
+[MIT](LICENSE) © 2026 Erfan Karami (erfan-ops)
