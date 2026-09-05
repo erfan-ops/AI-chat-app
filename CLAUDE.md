@@ -4,9 +4,9 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project
 
-Merged monorepo for an AI chat application: a FastAPI backend
-(`backend/`) and a React 19 + Vite + TypeScript frontend (`frontend/`). The
-backend serves a JSON API with SSE-streamed AI replies; the frontend is a
+Full-stack AI chat application in a single repository. Two components make up
+the product: `backend/`, a FastAPI server that serves a JSON API with
+SSE-streamed AI replies, and `frontend/`, a React 19 + Vite + TypeScript
 single-page chat app that consumes those streams.
 
 `backend/CLAUDE.md` is the authoritative backend guide — architectural
@@ -82,7 +82,7 @@ frontend/ React 19 SPA: feature folders, TanStack Query for server state, SSE vi
 ## Gotchas
 
 - Backend: `uv run` from `backend/` (root has no Python env). Frontend: `npm`
-  from `frontend/`. Each half has its own `.gitignore`, README, and env files
+  from `frontend/`. Each component directory keeps its own `.gitignore`, README, and env files
   (`.env.example` exists in `frontend/`; `backend/.env` is created from
   defaults in `app/core/config.py`).
 - Tests: the backend suite never touches Oracle (in-memory SQLite + a scripted

@@ -4,12 +4,13 @@ A full-stack AI chat application. Pick an AI character (persona), choose
 a model, start a conversation — and the character's replies stream in live, one
 token at a time.
 
-The project is a monorepo combining two applications that talk to each other:
+One application, developed in a single repository — two components that talk to
+each other:
 
-| Directory | Application | Stack |
-|---|---|---|
-| `backend/` | **AI Chat API** — REST + SSE API serving all data | Python · FastAPI · Oracle |
-| `frontend/` | **AI Chat** — the chat web app users interact with | React · TypeScript · Vite |
+| Directory | Component | Stack |
+| --- | --- | --- |
+| `backend/` | **API server** — REST + SSE API serving all data | Python · FastAPI · Oracle |
+| `frontend/` | **Web app** — the chat UI users interact with | React · TypeScript · Vite |
 
 Everything the UI shows — characters, models, conversations, messages — comes from
 the API. Nothing is hardcoded or mocked.
@@ -81,7 +82,7 @@ tokens return the user to the sign-in screen automatically.
 ## Tech stack
 
 | Layer | Technologies |
-|---|---|
+| --- | --- |
 | Frontend | React 19, TypeScript, Vite, TanStack Query, CSS Modules, oxlint, Playwright (e2e) |
 | Backend | Python 3.13+, FastAPI, SQLAlchemy 2.x (async), python-oracledb (thin mode), Pydantic v2, Argon2id, PyJWT, httpx, uvicorn |
 | Tooling | `uv` (Python deps), npm (frontend deps), ruff + mypy (backend QA) |
@@ -166,7 +167,7 @@ npm run preview                            # or: npx vite preview --host 0.0.0.0
 ### Backend (`backend/.env`)
 
 | Variable | Default | Purpose |
-|---|---|---|
+| --- | --- | --- |
 | `DATABASE_URL` | local Oracle PDB URL | SQLAlchemy URL, e.g. `oracle+oracledb://user:pass@host:1521/?service_name=...` (thin mode — no Oracle client needed) |
 | `JWT_SECRET` | `dev-only-secret-change-me` | HMAC key for signing tokens — **must be overridden** |
 | `CORS_ORIGINS` | localhost dev origins | Comma-separated allowed origins |
@@ -183,7 +184,7 @@ development. See `backend/README.md` for the full reference.
 ### Frontend (`frontend/.env`)
 
 | Variable | Default | Purpose |
-|---|---|---|
+| --- | --- | --- |
 | `VITE_API_BASE_URL` | `/api` | Base URL for API calls. `/api` is same-origin and proxied to `:8000`; set an absolute URL to reach a differently hosted backend (the backend must then allow the app's origin in `CORS_ORIGINS`) |
 
 Only values safe for the browser belong in the frontend env — the app never sees

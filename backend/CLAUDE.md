@@ -15,7 +15,7 @@ a future change must not break.
 
 ## Commands
 
-All via `uv` from the repo root (dev tools are in the `dev` dependency group, installed
+All via `uv` from the `backend/` directory (dev tools are in the `dev` dependency group, installed
 by default):
 
 ```bash

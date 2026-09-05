@@ -14,7 +14,7 @@ API — nothing is hardcoded or mocked.
 ## Requirements
 
 - Node.js ≥ 20 (developed on Node 24)
-- The backend running at `http://localhost:8000` (see `E:\coding\python_codes\AI-chat-api`)
+- The backend running at `http://localhost:8000` (in this repository, see `../backend`)
 - The backend's CORS allow-list includes `http://localhost:5173` (already the default)
 
 ## Running
