@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project
 
-FastAPI backend for an AI-companion chat application: JWT auth, AI characters
+FastAPI backend for an AI chat application: JWT auth, AI characters
 (personas), conversations, SSE-streamed AI replies, and long-term memories. It runs
 against an existing Oracle database whose schema is the source of truth — the app
 never creates or alters tables. Python 3.13+, dependencies managed with `uv`.

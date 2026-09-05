@@ -1,6 +1,6 @@
 # Database Schema — AI Chat Application (Oracle)
 
-This document describes the existing Oracle database schema for the AI girlfriend/chat
+This document describes the existing Oracle database schema for the AI chat
 application, discovered by direct inspection of the live database on 2026-08-18.
 
 - **Connection:** `chatbot/chatbot@192.168.1.42:1521/pdb.oracle.ek` (PDB: `pdb.oracle.ek`)
@@ -145,10 +145,10 @@ All `VARCHAR2` columns use byte semantics (`CHAR_USED = B`).
 | SYSTEM_PROMPT | VARCHAR2(9000) | Y | — | **Persona / system prompt** in the seed data |
 | OWNER_USER_ID | NUMBER(22) | Y | — | Creator (`USERS.ID`); `NULL` = built-in/global character |
 
-- **AI characters/personas.** Seed row: `(1, 'Maya', <long persona prompt>, NULL, 'ACTIVE', …)`.
-- The seed `SYSTEM_PROMPT` is a full system prompt ("You are the user's loving girlfriend,
-  your name is Maya…") — the app treats `SYSTEM_PROMPT` as the authoritative persona prompt
-  and `NAME` as the UI-facing character name.
+- **AI characters/personas.** Seed row: `(1, 'Maya', <persona prompt>, NULL, 'ACTIVE', …)`.
+- The seed `SYSTEM_PROMPT` is a full persona prompt written in the character's voice — the
+  app treats `SYSTEM_PROMPT` as the authoritative persona prompt and `NAME` as the
+  UI-facing character name.
 - `OWNER_USER_ID` splits the catalog in two: `NULL` rows are built-in characters visible to
   everyone, and a non-`NULL` row is private to that user. Every character query filters on
   `OWNER_USER_ID IS NULL OR OWNER_USER_ID = :user_id`, so one user never sees another's

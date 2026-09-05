@@ -1,1 +1,1 @@
-"""AI Chat API — FastAPI backend for the AI girlfriend/chat application."""
+"""AI Chat API — FastAPI backend for the AI chat application."""

@@ -1,6 +1,6 @@
 # AI Chat API
 
-A production-quality **FastAPI backend for the AI girlfriend/chat application**, built
+A production-quality **FastAPI backend for the AI chat application**, built
 around the **existing Oracle database schema** (9 tables). The schema is the source of
 truth — the application adapts to it, never the other way around.
 
@@ -285,7 +285,7 @@ For each generation the app builds the model context from persisted data
 (`app/ai/context.py`, pure functions):
 
 1. **Character**: `CHARACTERS.SYSTEM_PROMPT` is used as the system prompt (fallback: a
-   built-in warm-companion prompt).
+   built-in default assistant prompt).
 2. **Memories**: the user's top active memories for that character (by importance)
    are appended to the system prompt — long-term memory support, ready for retrieval
    ranking.

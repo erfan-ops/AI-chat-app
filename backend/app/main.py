@@ -75,7 +75,7 @@ def create_app() -> FastAPI:
         title=settings.app_name,
         version="0.1.0",
         description=(
-            "Backend API for the AI companion/chat application: authentication, "
+            "Backend API for the AI chat application: authentication, "
             "AI characters, conversations, messages, memories, and streamed AI replies (SSE). "
             "All endpoints except `/auth/register` and `/auth/login` require a Bearer token."
         ),

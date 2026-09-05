@@ -20,8 +20,8 @@ from app.db.models.message import Message
 from app.db.models.persona import UserPersona
 
 DEFAULT_SYSTEM_PROMPT = (
-    "You are a warm, caring and supportive companion. Keep replies conversational and "
-    "natural, like texting a close friend. Never mention that you are an AI."
+    "You are a friendly, helpful assistant. Keep replies conversational and natural. "
+    "Never mention that you are an AI."
 )
 
 # Rough heuristic for token budgeting: ~4 characters per token for English text.

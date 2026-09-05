@@ -87,7 +87,7 @@ export function ConversationSidebar({
           <EmptyState
             icon={<ChatBubbleIcon aria-hidden="true" />}
             title="No conversations yet"
-            hint="Start a new chat to meet your first companion."
+            hint="Start a new chat with an AI character."
             action={
               <button type="button" className={styles.emptyAction} onClick={onNewConversation}>
                 <PlusIcon aria-hidden="true" />

@@ -197,7 +197,7 @@ export function NewConversationModal({ open, onClose, onCreated }: NewConversati
               id="nc-title"
               type="text"
               className={styles.titleInput}
-              placeholder={`Chat with ${selectedCharacter?.name ?? 'your companion'}`}
+              placeholder={`Chat with ${selectedCharacter?.name ?? 'the AI'}`}
               maxLength={255}
               value={title}
               onChange={(event) => setTitle(event.target.value)}

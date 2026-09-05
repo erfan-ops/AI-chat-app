@@ -29,7 +29,7 @@ export function ConversationListItem({ conversation, isActive, onSelect }: Conve
   const inputRef = useRef<HTMLInputElement>(null)
 
   const character = useCharacter(conversation.character?.id)
-  const characterName = conversation.character?.name ?? 'Companion'
+  const characterName = conversation.character?.name ?? 'Assistant'
   const displayTitle = conversation.title?.trim() || characterName
   const modelLabel = conversation.model?.display_name ?? conversation.model?.model_name ?? null
 

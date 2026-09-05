@@ -134,7 +134,7 @@ def test_build_context_default_system_prompt() -> None:
 
 
 def test_build_context_uses_character_persona() -> None:
-    persona = "You are Maya, a warm companion."
+    persona = "You are Maya, a friendly and helpful assistant."
     context = build_conversation_context(
         character_system_prompt=persona,
         memories=[],

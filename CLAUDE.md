@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project
 
-Merged monorepo for an AI-companion chat application: a FastAPI backend
+Merged monorepo for an AI chat application: a FastAPI backend
 (`backend/`) and a React 19 + Vite + TypeScript frontend (`frontend/`). The
 backend serves a JSON API with SSE-streamed AI replies; the frontend is a
 single-page chat app that consumes those streams.

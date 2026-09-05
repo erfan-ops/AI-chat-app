@@ -1,7 +1,7 @@
 [project]
 name = "ai-chat-api"
 version = "0.1.0"
-description = "FastAPI backend for the AI girlfriend/chat application (Oracle-backed)"
+description = "FastAPI backend for the AI chat application (Oracle-backed)"
 readme = "README.md"
 requires-python = ">=3.13"
 dependencies = [

@@ -63,7 +63,7 @@ export function PersonaFormModal({ open, onClose, onCreated }: PersonaFormModalP
     <Modal open={open} onClose={onClose} title="New persona" size="md">
       <form onSubmit={handleSubmit}>
         <p className={styles.hint}>
-          A persona is how you present yourself — the companion will know this about
+          A persona is how you present yourself — the AI will know this about
           you. Only the name is required.
         </p>
 
@@ -131,7 +131,7 @@ export function PersonaFormModal({ open, onClose, onCreated }: PersonaFormModalP
             onChange={(event) => setDescription(event.target.value)}
             maxLength={1500}
             rows={4}
-            placeholder="Anything you'd like your companion to know…"
+            placeholder="Anything you'd like the AI to know…"
             disabled={busy}
           />
         </div>

@@ -1,6 +1,6 @@
-# AI Girlfriend App
+# AI Chat App
 
-A full-stack AI companion chat application. Pick an AI character (persona), choose
+A full-stack AI chat application. Pick an AI character (persona), choose
 a model, start a conversation — and the character's replies stream in live, one
 token at a time.
 

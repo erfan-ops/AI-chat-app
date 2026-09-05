@@ -137,9 +137,9 @@ async def catalog(session_factory: async_sessionmaker[AsyncSession]) -> AsyncIte
         db.add(
             Character(
                 name="Maya",
-                description="A warm and caring companion.",
+                description="A friendly and helpful assistant.",
                 # SYSTEM_PROMPT is the authoritative persona prompt (see docs/database.md).
-                system_prompt="You are Maya, a warm and caring companion.",
+                system_prompt="You are Maya, a friendly and helpful assistant.",
                 status="ACTIVE",
                 created_at=now,
                 updated_at=now,

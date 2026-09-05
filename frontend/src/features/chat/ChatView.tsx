@@ -74,7 +74,7 @@ export function ChatView({ conversationId, onBack }: ChatViewProps) {
   }
 
   const conversation = conversationQuery.data
-  const characterName = conversation.character?.name ?? 'Companion'
+  const characterName = conversation.character?.name ?? 'Assistant'
   const modelLabel = conversation.model?.display_name ?? conversation.model?.model_name ?? null
   const isTyping = stream !== undefined
 
@@ -97,7 +97,7 @@ export function ChatView({ conversationId, onBack }: ChatViewProps) {
               <span className={styles.typing}>{characterName} is typing…</span>
             ) : (
               <>
-                {modelLabel ?? 'AI companion'}
+                {modelLabel ?? 'AI chat'}
                 {conversation.user_persona && <> · as {conversation.user_persona.name}</>}
               </>
             )}
