@@ -65,7 +65,8 @@ src/
   main.tsx                 # entry: QueryClientProvider + ToastHost
   App.tsx                  # session gate: AuthPage | AppShell
   AppShell.tsx             # two-pane layout + pure-UI state (active chat, drawer, modal)
-  styles/tokens.css        # design tokens (light + dark), reset, focus/scroll styles
+  styles/tokens.css        # design tokens (light + dark), reset, focus/scroll styles,
+                           #   Persian webfont @font-face (Arabic-script unicode-range)
   types/api.ts             # domain types mirroring the backend's Pydantic schemas
   api/                     # the only place that talks HTTP
     client.ts              #   fetch wrapper: base URL, bearer token, ApiError, 401 handling
@@ -78,7 +79,7 @@ src/
   features/
     auth/AuthPage          # sign-in / account creation (the API requires a Bearer token)
     conversations/         # sidebar, list items (rename/delete), infinite list query
-    characters/            # cached character lookup (for avatars)
+    characters/            # cached character lookup (avatars), create + profile dialogs
     personas/              # user personas: cached list + create-persona form modal
     newConversation/       # character + model picker modal (+ optional persona picker)
     chat/                  # ChatView, MessageList, MessageComposer,
@@ -86,7 +87,18 @@ src/
                            #   streamingStore (module-level store for in-flight replies)
 e2e/                       # Playwright verification scripts
 docs/openapi.json          # snapshot of the backend's OpenAPI spec
+public/
+  fonts/IranYekanXVF/      # IRANYekanX font package (one 96 KB variable woff2 is used)
+  favicon.svg icons.svg
 ```
+
+**Typography.** Latin text uses the OS system font stack; Persian/Arabic-script text
+renders in the bundled **IRANYekanX** variable font, declared in `src/styles/tokens.css`
+with a `unicode-range` limited to Arabic-script code points. That range is what keeps
+Latin on the system stack even though the family is listed first, and it makes the
+browser fetch the font only once Persian text actually appears on screen. To bundle a
+face for another script, add a `@font-face` with that script's `unicode-range` and put
+its family at the front of the `body` stack.
 
 ## API integration notes
 
@@ -111,10 +123,11 @@ docs/openapi.json          # snapshot of the backend's OpenAPI spec
 
 ## Assumptions & limitations
 
-- Character `description` fields are persona **system prompts** for the AI provider
-  (e.g. "NEVER break character…"), not bios meant for humans — so the UI never
-  displays them. Characters are shown by name + avatar (with a colored initial
-  fallback, since current avatars are `null`).
+- A character's `system_prompt` is the persona **prompt** sent to the AI provider
+  (e.g. "NEVER break character…") — application data, never displayed in the UI.
+  The separate `description` field is a short human-facing blurb and is shown in
+  the character profile dialog. Characters are listed by name + avatar (with a
+  colored initial fallback when `avatar_url` is `null`).
 - The conversation list only exposes a `{id, name}` character brief and no last-message
   preview, so sidebar items show: character avatar, title (or character name), model
   name, persona (as "as …" when one was picked), and relative time of the last activity.

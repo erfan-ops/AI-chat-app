@@ -1,6 +1,7 @@
-import { useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import type { KeyboardEvent } from 'react'
 import { useDeleteConversation, useRenameConversation } from './useConversations'
+import { CharacterProfileModal } from '../characters/CharacterProfileModal'
 import { useCharacter } from '../characters/useCharacters'
 import type { Conversation } from '../../types/api'
 import { formatRelativeTime } from '../../utils/dates'
@@ -27,6 +28,10 @@ export function ConversationListItem({ conversation, isActive, onSelect }: Conve
   const rename = useRenameConversation()
   const remove = useDeleteConversation()
   const inputRef = useRef<HTMLInputElement>(null)
+  const [profileOpen, setProfileOpen] = useState(false)
+  // Stable identity: Modal's effect depends on onClose and ConversationListItem
+  // re-renders whenever the conversation list refetches.
+  const closeProfile = useCallback(() => setProfileOpen(false), [])
 
   const character = useCharacter(conversation.character?.id)
   const characterName = conversation.character?.name ?? 'Assistant'
@@ -79,6 +84,21 @@ export function ConversationListItem({ conversation, isActive, onSelect }: Conve
         role="listitem"
         className={`${styles.item} ${isActive ? styles.itemActive : ''} ${editing ? styles.itemEditing : ''}`}
       >
+        {conversation.character && (
+          <button
+            type="button"
+            className={styles.avatarButton}
+            onClick={() => setProfileOpen(true)}
+            disabled={editing}
+            // The Avatar is aria-hidden, so this is the button's only accessible
+            // name. No `title`: Playwright's getByTitle matches substring, and the
+            // e2e scripts select rows with getByTitle(<character name>).first().
+            aria-label={`View ${characterName} profile`}
+          >
+            <Avatar name={characterName} src={character?.avatar_url} size={42} />
+          </button>
+        )}
+
         <button
           type="button"
           className={styles.main}
@@ -87,7 +107,6 @@ export function ConversationListItem({ conversation, isActive, onSelect }: Conve
           aria-current={isActive ? 'true' : undefined}
           title={displayTitle}
         >
-          <Avatar name={characterName} src={character?.avatar_url} size={42} />
           <span className={styles.texts}>
             {editing ? (
               <input
@@ -174,6 +193,13 @@ export function ConversationListItem({ conversation, isActive, onSelect }: Conve
           </button>
         </div>
       </Modal>
+
+      <CharacterProfileModal
+        open={profileOpen}
+        onClose={closeProfile}
+        name={characterName}
+        character={character}
+      />
     </>
   )
 }

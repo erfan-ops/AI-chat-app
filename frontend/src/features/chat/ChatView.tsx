@@ -1,6 +1,7 @@
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { getConversation } from '../../api/conversations'
+import { CharacterProfileModal } from '../characters/CharacterProfileModal'
 import { useCharacter } from '../characters/useCharacters'
 import { useConversationStream } from './streamingStore'
 import { MessageList } from './MessageList'
@@ -40,6 +41,13 @@ export function ChatView({ conversationId, onBack }: ChatViewProps) {
     setReplyConversationId(conversationId)
     setReplyTo(null)
   }
+  // Clicking the header avatar opens the character profile. ChatView remounts on
+  // every conversation switch (AppShell keys it by id), so this never leaks.
+  const [profileOpen, setProfileOpen] = useState(false)
+  // Stable identity: Modal's effect depends on onClose, and this component
+  // re-renders on every stream delta — an inline arrow would re-run that effect
+  // (and steal focus) continuously while a reply streams.
+  const closeProfile = useCallback(() => setProfileOpen(false), [])
 
   useEffect(() => {
     if (conversationQuery.error instanceof ApiError && conversationQuery.error.status === 404) {
@@ -89,7 +97,21 @@ export function ChatView({ conversationId, onBack }: ChatViewProps) {
         >
           <ChevronLeftIcon aria-hidden="true" />
         </button>
-        <Avatar name={characterName} src={character?.avatar_url} size={38} />
+        {conversation.character ? (
+          <button
+            type="button"
+            className={styles.avatarButton}
+            onClick={() => setProfileOpen(true)}
+            // The Avatar is aria-hidden, so this is the button's only accessible
+            // name. No `title`: Playwright's getByTitle matches substring and the
+            // e2e scripts select conversations with getByTitle(<character name>).
+            aria-label={`View ${characterName} profile`}
+          >
+            <Avatar name={characterName} src={character?.avatar_url} size={38} />
+          </button>
+        ) : (
+          <Avatar name={characterName} src={character?.avatar_url} size={38} />
+        )}
         <div className={styles.headerTexts}>
           <h1 className={styles.headerTitle}>{conversation.title?.trim() || characterName}</h1>
           <p className={styles.headerSubtitle}>
@@ -120,6 +142,13 @@ export function ChatView({ conversationId, onBack }: ChatViewProps) {
         characterName={characterName}
         replyTo={replyTo}
         onCancelReply={() => setReplyTo(null)}
+      />
+
+      <CharacterProfileModal
+        open={profileOpen}
+        onClose={closeProfile}
+        name={characterName}
+        character={character}
       />
     </section>
   )

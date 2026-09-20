@@ -2,6 +2,10 @@
   position: relative;
   display: flex;
   align-items: center;
+  /* The row used to be sized by the 42px avatar inside .main (42 + 2×9px padding).
+     The avatar now sits outside it, so pin the height — this also keeps the row
+     from collapsing while renaming, when .main shrinks to the input. */
+  min-height: 60px;
   border-radius: var(--radius-md);
   transition: background 120ms ease;
 }
@@ -21,9 +25,25 @@
   gap: 12px;
   flex: 1;
   min-width: 0;
-  padding: 9px 10px;
+  /* 10px gutter + 42px avatar + 12px = the same 64px text inset as before */
+  padding: 9px 10px 9px 12px;
   text-align: left;
   border-radius: var(--radius-md);
+}
+
+/* Clickable avatar (opens the character profile). No padding: the box is exactly
+   the 42px avatar, so the hover ring stays circular. */
+.avatarButton {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  margin-left: 10px;
+  border-radius: var(--radius-full);
+}
+
+.avatarButton:hover:not(:disabled) {
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 35%, transparent);
 }
 
 .itemActive .main::before {

@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { listModels } from '../../api/models'
+import { CharacterFormModal } from '../characters/CharacterFormModal'
 import { useCharacters } from '../characters/useCharacters'
 import { usePersonas } from '../personas/usePersonas'
 import { PersonaFormModal } from '../personas/PersonaFormModal'
@@ -49,6 +50,7 @@ export function NewConversationModal({ open, onClose, onCreated }: NewConversati
   const [personaId, setPersonaId] = useState<number | null>(null)
   const [title, setTitle] = useState('')
   const [personaFormOpen, setPersonaFormOpen] = useState(false)
+  const [characterFormOpen, setCharacterFormOpen] = useState(false)
 
   const characters = charactersQuery.data ?? EMPTY_CHARACTERS
   const models = modelsQuery.data ?? EMPTY_MODELS
@@ -119,7 +121,7 @@ export function NewConversationModal({ open, onClose, onCreated }: NewConversati
             <EmptyState
               icon={<UserIcon aria-hidden="true" />}
               title="No characters available"
-              hint="The server doesn't have any active characters yet."
+              hint="Create the first one below to get started."
             />
           )}
 
@@ -147,6 +149,17 @@ export function NewConversationModal({ open, onClose, onCreated }: NewConversati
                 )
               })}
             </div>
+          )}
+
+          {charactersQuery.isSuccess && (
+            <button
+              type="button"
+              className={styles.newCharacterChip}
+              onClick={() => setCharacterFormOpen(true)}
+            >
+              <PlusIcon aria-hidden="true" />
+              New character
+            </button>
           )}
         </section>
 
@@ -322,6 +335,18 @@ export function NewConversationModal({ open, onClose, onCreated }: NewConversati
           // Selecting the new persona immediately beats re-finding it in the list.
           setPersonaId(persona.id)
           setPersonaFormOpen(false)
+        }}
+      />
+    )}
+
+    {characterFormOpen && (
+      <CharacterFormModal
+        open={characterFormOpen}
+        onClose={() => setCharacterFormOpen(false)}
+        onCreated={(character) => {
+          // Selecting the new character immediately beats re-finding it in the list.
+          setCharacterId(character.id)
+          setCharacterFormOpen(false)
         }}
       />
     )}

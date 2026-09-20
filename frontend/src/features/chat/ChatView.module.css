@@ -46,6 +46,20 @@
   height: 22px;
 }
 
+/* Clickable header avatar (opens the character profile). No padding, so the box
+   is exactly the avatar and the hover ring stays circular. */
+.avatarButton {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  border-radius: var(--radius-full);
+}
+
+.avatarButton:hover {
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 35%, transparent);
+}
+
 .headerTexts {
   min-width: 0;
   display: flex;

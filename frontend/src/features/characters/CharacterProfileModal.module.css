@@ -1,0 +1,25 @@
+.profile {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 18px;
+  text-align: center;
+}
+
+.description,
+.empty {
+  font-size: 14px;
+  line-height: 1.55;
+  /* Descriptions are authored in a textarea — keep their line breaks, and let
+     long unbroken text wrap instead of scrolling the dialog's body sideways. */
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.description {
+  color: var(--text-2);
+}
+
+.empty {
+  color: var(--text-3);
+}

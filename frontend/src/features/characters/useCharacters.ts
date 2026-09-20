@@ -1,6 +1,6 @@
-import { useQuery } from '@tanstack/react-query'
-import { listCharacters } from '../../api/characters'
-import type { Character } from '../../types/api'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { createCharacter, listCharacters } from '../../api/characters'
+import type { Character, CharacterCreateRequest } from '../../types/api'
 
 export const charactersQueryKey = ['characters'] as const
 
@@ -9,6 +9,16 @@ export function useCharacters() {
   return useQuery({
     queryKey: charactersQueryKey,
     queryFn: listCharacters,
+  })
+}
+
+export function useCreateCharacter() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (request: CharacterCreateRequest) => createCharacter(request),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: charactersQueryKey })
+    },
   })
 }
 

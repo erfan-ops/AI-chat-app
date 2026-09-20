@@ -1,6 +1,22 @@
 /* Design tokens + base styles for the AI Chat application.
    Light theme is the default; dark theme activates via the user's OS setting. */
 
+/* ---- Typeface ----------------------------------------------------------------
+   IRANYekanX (variable, wght 100-1000) renders Persian/Arabic-script text.
+   The unicode-range keeps Latin text on the system stack in `body` — the font
+   is listed first there, but it can only claim glyphs inside these blocks, and
+   the browser downloads it only when such text actually appears. */
+
+@font-face {
+  font-family: 'IRANYekanX';
+  font-style: normal;
+  font-weight: 100 1000;
+  font-display: swap;
+  src: url('/fonts/IranYekanXVF/Variable%20Font/webfont/IRANYekanXVF.woff2') format('woff2');
+  unicode-range:
+    U+0600-06FF, U+0750-077F, U+0870-08FF, U+FB50-FDFF, U+FE70-FEFF, U+200C-200D;
+}
+
 :root {
   color-scheme: light;
 
@@ -112,8 +128,8 @@ body,
 body {
   margin: 0;
   font-family:
-    -apple-system, BlinkMacSystemFont, 'Segoe UI Variable', 'Segoe UI', Roboto,
-    'Helvetica Neue', Arial, sans-serif;
+    'IRANYekanX', -apple-system, BlinkMacSystemFont, 'Segoe UI Variable', 'Segoe UI',
+    Roboto, 'Helvetica Neue', Arial, sans-serif;
   font-size: 15px;
   line-height: 1.45;
   color: var(--text-1);

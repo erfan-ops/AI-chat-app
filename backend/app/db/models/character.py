@@ -1,4 +1,5 @@
-"""CHARACTERS — AI characters/personas. DESCRIPTION holds the persona system prompt."""
+"""CHARACTERS — AI characters/personas. SYSTEM_PROMPT holds the persona system
+prompt sent to the model; DESCRIPTION is the short human-facing blurb."""
 
 from __future__ import annotations
 
@@ -20,7 +21,7 @@ class Character(Base):
     status: Mapped[str] = mapped_column(String(20))
     created_at: Mapped[datetime] = mapped_column(DateTime)
     updated_at: Mapped[datetime] = mapped_column(DateTime)
-    system_prompt: Mapped[str | None] = mapped_column(String(9000))
+    system_prompt: Mapped[str | None] = mapped_column(String(20000))
     # NULL = built-in character visible to everyone; otherwise the creating user.
     owner_user_id: Mapped[int | None] = mapped_column(Integer, ForeignKey("USERS.id"))
 

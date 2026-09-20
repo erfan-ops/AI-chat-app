@@ -283,7 +283,8 @@
   height: 11px;
 }
 
-.newPersonaChip {
+.newPersonaChip,
+.newCharacterChip {
   display: flex;
   align-items: center;
   gap: 6px;
@@ -297,15 +298,22 @@
   transition: border-color 120ms ease, color 120ms ease, background 120ms ease;
 }
 
-.newPersonaChip:hover {
+.newPersonaChip:hover,
+.newCharacterChip:hover {
   border-color: var(--accent);
   color: var(--accent);
   background: var(--bg-active);
 }
 
-.newPersonaChip svg {
+.newPersonaChip svg,
+.newCharacterChip svg {
   width: 14px;
   height: 14px;
+}
+
+/* The character chip sits in the flex-column .section, not in a chip row. */
+.newCharacterChip {
+  align-self: flex-start;
 }
 
 .personaError {

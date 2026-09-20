@@ -44,14 +44,30 @@ export interface UserUpdate {
   default_model_id?: number | null
 }
 
-/** An active AI character (persona). `description` is the persona system
- *  prompt — it is data for the AI provider, not content for the UI. */
+/** An AI character you chat with (mirrors CharacterRead). `system_prompt` is
+ *  the persona prompt sent to the AI provider; `description` is a short
+ *  catalog blurb and is not part of the prompt. `owner_user_id` is null for
+ *  built-in characters, the creator's id for private ones. */
 export interface Character {
   id: number
   name: string
   description: string | null
   avatar_url: string | null
+  system_prompt: string | null
+  status: string
   created_at: string
+  owner_user_id: number | null
+}
+
+/** Body for POST /characters. Only `name` is required; the rest are optional
+ *  and stored as null when omitted. `owner_user_id` and `status` are
+ *  administrator-only and must never be sent by this app (the owner always
+ *  comes from the access token). */
+export interface CharacterCreateRequest {
+  name: string
+  description?: string | null
+  avatar_url?: string | null
+  system_prompt?: string | null
 }
 
 /** A user-authored persona — how the user presents themselves in a chat

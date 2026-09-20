@@ -39,6 +39,8 @@ the API. Nothing is hardcoded or mocked.
   characters and the model catalog; regular users manage only their own.
 - **Modern UI** — light/dark theme (follows the OS), mobile-friendly layout,
   avatars with initial fallbacks, typing indicator, and a toasts/error system.
+  Persian text renders in a bundled IRANYekanX webfont (Latin keeps the system
+  font stack).
 
 ## How it works
 

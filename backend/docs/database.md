@@ -142,7 +142,7 @@ All `VARCHAR2` columns use byte semantics (`CHAR_USED = B`).
 | STATUS | VARCHAR2(20) | N | — | Seed row uses `ACTIVE` |
 | CREATED_AT | TIMESTAMP(6) | N | `systimestamp` | |
 | UPDATED_AT | TIMESTAMP(6) | N | `systimestamp` | |
-| SYSTEM_PROMPT | VARCHAR2(9000) | Y | — | **Persona / system prompt** in the seed data |
+| SYSTEM_PROMPT | VARCHAR2(20000) | Y | — | **Persona / system prompt** in the seed data |
 | OWNER_USER_ID | NUMBER(22) | Y | — | Creator (`USERS.ID`); `NULL` = built-in/global character |
 
 - **AI characters/personas.** Seed row: `(1, 'Maya', <persona prompt>, NULL, 'ACTIVE', …)`.
