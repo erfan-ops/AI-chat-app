@@ -6,10 +6,10 @@ import { Avatar } from '../../components/Avatar'
 import { EmptyState } from '../../components/EmptyState'
 import { ErrorState } from '../../components/ErrorState'
 import { Spinner } from '../../components/Spinner'
-import { ArrowDownIcon, ChatBubbleIcon } from '../../components/Icons'
+import { ArrowDownIcon, ChatBubbleIcon, ReplyIcon } from '../../components/Icons'
 import { MessageContextMenu } from './MessageContextMenu'
 import type { MenuPosition } from './MessageContextMenu'
-import { useLongPress } from './useLongPress'
+import { useMessageGestures } from './useMessageGestures'
 import type { Message } from '../../types/api'
 import styles from './MessageList.module.css'
 
@@ -177,6 +177,7 @@ export function MessageList({
                 }
                 onScrollToMessage={scrollToMessage}
                 onOpenMenu={(x, y) => setMenu({ message, x, y })}
+                onReply={onReply}
               />
             )
           })}
@@ -238,6 +239,7 @@ interface MessageRowProps {
   repliedTo?: Message
   onScrollToMessage: (messageId: number) => void
   onOpenMenu: (x: number, y: number) => void
+  onReply: (message: Message) => void
 }
 
 function MessageRow({
@@ -250,12 +252,17 @@ function MessageRow({
   repliedTo,
   onScrollToMessage,
   onOpenMenu,
+  onReply,
 }: MessageRowProps) {
   const mine = message.role === 'user'
   const showAvatar = !mine && groupEnd
-  const { pressHandlers, wasTriggered } = useLongPress(onOpenMenu)
+  // Touch: tap or hold opens the actions menu, right-swipe replies.
+  const { gestureHandlers, swipeOffset, swipeProgress, wasTriggered } = useMessageGestures({
+    onOpenMenu,
+    onReply: () => onReply(message),
+  })
 
-  // Right-click opens the menu. Mobile long-press opens it via useLongPress;
+  // Right-click opens the menu. On touch the hold opens it via the gesture hook;
   // the browser's own contextmenu (fired after the hold) must not open a second.
   function handleContextMenu(event: React.MouseEvent) {
     event.preventDefault()
@@ -270,14 +277,26 @@ function MessageRow({
         className={`${styles.row} ${mine ? styles.rowMine : styles.rowTheirs} ${groupStart ? styles.rowGroupStart : ''}`}
         data-message-id={message.id}
         onContextMenu={handleContextMenu}
-        {...pressHandlers}
+        {...gestureHandlers}
       >
         <span className={styles.avatarSlot}>
           {showAvatar && (
             <Avatar name={characterName} src={characterAvatarUrl} size={30} />
           )}
         </span>
-        <div className={`${styles.bubble} ${mine ? styles.bubbleMine : styles.bubbleTheirs}`}>
+        {swipeProgress > 0 && (
+          <span
+            className={styles.swipeHint}
+            style={{ opacity: swipeProgress, transform: `translateY(-50%) scale(${0.7 + swipeProgress * 0.3})` }}
+            aria-hidden="true"
+          >
+            <ReplyIcon />
+          </span>
+        )}
+        <div
+          className={`${styles.bubble} ${mine ? styles.bubbleMine : styles.bubbleTheirs}`}
+          style={swipeOffset > 0 ? { transform: `translateX(${swipeOffset}px)`, transition: 'none' } : undefined}
+        >
           {repliedTo && (
             <button
               type="button"

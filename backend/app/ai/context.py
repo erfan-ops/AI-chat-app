@@ -12,6 +12,7 @@ import json
 import re
 from collections.abc import Sequence
 from dataclasses import dataclass
+from datetime import UTC, datetime
 from typing import Literal, cast
 
 from app.ai.base import ChatMessage
@@ -57,15 +58,19 @@ MESSAGE_FORMAT_HINT = (
     'only "content" and "reply_to_id".\n'
     "INCOMING MESSAGE FORMAT. Every message in the conversation history is sent to "
     'you as one JSON object per message: {"id": <number>, "role": "user"|"assistant", '
-    '"content": "<message text>", "reply_to_id": <number|null>}. '
+    '"content": "<message text>", "created_at": "<ISO-8601 UTC timestamp>", '
+    '"reply_to_id": <number|null>}. '
     "id is that message's id, and reply_to_id is the id of the message it replies to "
-    "(null when it is not a reply). The content field holds the actual message text — "
-    "reply to it naturally, never quote or imitate the JSON wrapper.\n"
+    "(null when it is not a reply). created_at is when that message was sent, in UTC, "
+    'e.g. "2026-09-21T14:05:00Z" — use it to tell how much time passed between '
+    "messages. The content field holds the actual message text — reply to it "
+    "naturally, never quote or imitate the JSON wrapper.\n"
     "REPLY TARGETING. Set reply_to_id to the id of the specific message you are "
     "answering (the ids appear in the history above). Do this when the user refers to "
     "an earlier message by content, or asks you to reply to one; otherwise set it to "
     'null. Example: for the incoming message {"id": 12, "role": "user", '
-    '"content": "How are you?", "reply_to_id": null}, a direct answer would be '
+    '"content": "How are you?", "created_at": "2026-09-21T14:05:00Z", '
+    '"reply_to_id": null}, a direct answer would be '
     '{"content": "I\'m great, thank you!", "reply_to_id": 12}.\n'
     'JSON VALIDITY RULES. Escape double quotes inside your text as \\" and newlines '
     "as \\n; do not use trailing commas or comments. Output nothing but the JSON object."
@@ -85,19 +90,32 @@ def estimate_tokens(text: str) -> int:
     return max(1, len(text) // CHARS_PER_TOKEN)
 
 
+def render_created_at(value: datetime) -> str:
+    """Render a message timestamp as UTC ISO-8601 with a trailing ``Z``.
+
+    The column is a naive-UTC ``TIMESTAMP``, so the suffix is what tells the model
+    which zone the value is in; microseconds are dropped because second precision
+    is plenty for conversation context and keeps every envelope small.
+    """
+    moment = value.replace(tzinfo=UTC) if value.tzinfo is None else value
+    return moment.astimezone(UTC).isoformat(timespec="seconds").replace("+00:00", "Z")
+
+
 def render_message_body(message: Message) -> str:
     """Serialize one history message as a JSON envelope for the AI.
 
-    The envelope carries the message's own id and reply_to_id — every history
-    message, assistant ones included — so the AI can reference earlier messages
-    by id in its structured reply. ``json.dumps`` handles all escaping, so
-    message text can never forge envelope fields.
+    The envelope carries the message's own id, its timestamp and its reply_to_id —
+    every history message, assistant ones included — so the AI can reference
+    earlier messages by id in its structured reply and can tell how far apart they
+    were sent. ``json.dumps`` handles all escaping, so message text can never
+    forge envelope fields.
     """
     return json.dumps(
         {
             "id": message.id,
             "role": message.role,
             "content": message.content,
+            "created_at": render_created_at(message.created_at),
             "reply_to_id": message.reply_to_id,
         }
     )
@@ -293,8 +311,8 @@ def select_messages(
 
     Walks the history backwards so the newest message is never dropped; returns
     the selection in chronological order. Every message is serialized as a JSON
-    envelope carrying id/role/content/reply_to_id — replies are self-describing,
-    so no separate lookup pass is needed.
+    envelope carrying id/role/content/created_at/reply_to_id — replies are
+    self-describing, so no separate lookup pass is needed.
     """
     selected: list[ChatMessage] = []
     used_chars = 0

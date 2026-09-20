@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import itertools
 import json
+from datetime import UTC, datetime, timedelta, timezone
 
 from app.ai.context import (
     DEFAULT_SYSTEM_PROMPT,
@@ -13,6 +14,7 @@ from app.ai.context import (
     build_conversation_context,
     extract_streamed_content,
     parse_completion,
+    render_created_at,
     select_messages,
 )
 from app.core.time import utcnow
@@ -29,8 +31,14 @@ def make_message(
     *,
     id: int | None = None,
     reply_to_id: int | None = None,
+    created_at: datetime | None = None,
 ) -> Message:
-    message = Message(conversation_id=1, role=role, content=content, created_at=utcnow())
+    message = Message(
+        conversation_id=1,
+        role=role,
+        content=content,
+        created_at=created_at if created_at is not None else utcnow(),
+    )
     message.id = id if id is not None else next(_message_ids)
     if reply_to_id is not None:
         message.reply_to_id = reply_to_id
@@ -129,6 +137,7 @@ def test_build_context_default_system_prompt() -> None:
         "id": message.id,
         "role": "user",
         "content": "hi",
+        "created_at": render_created_at(message.created_at),
         "reply_to_id": None,
     }
 
@@ -267,10 +276,11 @@ def test_build_context_respects_context_window_budget() -> None:
 
 
 def test_select_messages_wraps_every_message_in_json_envelope() -> None:
-    """History messages carry id, role, content and reply_to_id — assistant ones
-    included — so the AI can reference any of them by id."""
-    target = make_message("You should get some rest.", role="assistant", id=10)
-    reply = make_message("Why?", id=11, reply_to_id=10)
+    """History messages carry id, role, content, created_at and reply_to_id —
+    assistant ones included — so the AI can reference any of them by id."""
+    sent = datetime(2026, 9, 21, 14, 5, tzinfo=UTC)
+    target = make_message("You should get some rest.", role="assistant", id=10, created_at=sent)
+    reply = make_message("Why?", id=11, reply_to_id=10, created_at=sent + timedelta(minutes=2))
 
     selected = select_messages([target, reply], max_messages=50, char_budget=10000)
 
@@ -279,14 +289,41 @@ def test_select_messages_wraps_every_message_in_json_envelope() -> None:
         "id": 10,
         "role": "assistant",
         "content": "You should get some rest.",
+        "created_at": "2026-09-21T14:05:00Z",
         "reply_to_id": None,
     }
     assert json.loads(selected[1].content) == {
         "id": 11,
         "role": "user",
         "content": "Why?",
+        "created_at": "2026-09-21T14:07:00Z",
         "reply_to_id": 10,
     }
+
+
+def test_render_created_at_is_utc_iso8601_with_second_precision() -> None:
+    """Naive values are UTC (the column has no zone), aware ones are converted,
+    and microseconds are dropped so envelopes stay small."""
+    naive = datetime(2026, 9, 21, 14, 5, 0, 123456)
+    assert render_created_at(naive) == "2026-09-21T14:05:00Z"
+
+    aware = datetime(2026, 9, 21, 16, 5, tzinfo=UTC) + timedelta(hours=1)
+    assert render_created_at(aware) == "2026-09-21T17:05:00Z"
+
+    # A value carrying a non-UTC offset is converted, not relabelled.
+    offset = datetime(2026, 9, 21, 17, 5, tzinfo=timezone(timedelta(hours=2)))
+    assert render_created_at(offset) == "2026-09-21T15:05:00Z"
+
+
+def test_message_envelope_tells_the_ai_when_each_message_was_sent() -> None:
+    """The timestamps are per message, so the AI can tell how far apart they are."""
+    first = make_message("first", id=1, created_at=datetime(2026, 9, 21, 9, 0))
+    second = make_message("second", id=2, created_at=datetime(2026, 9, 22, 9, 0))
+
+    selected = select_messages([first, second], max_messages=50, char_budget=10000)
+
+    assert json.loads(selected[0].content)["created_at"] == "2026-09-21T09:00:00Z"
+    assert json.loads(selected[1].content)["created_at"] == "2026-09-22T09:00:00Z"
 
 
 def test_select_messages_reply_reference_is_data_not_lookup() -> None:

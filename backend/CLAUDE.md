@@ -120,10 +120,11 @@ and uses the `AI_API_KEY` / `AI_BASE_URL` / `AI_MODEL` env fallbacks.
 - Context building in `app/ai/context.py` is pure (no I/O): persona prompt + top
   memories + budgeted history (~4 chars/token heuristic, newest message never
   dropped). Every history message is sent to the AI as a JSON envelope carrying
-  id/role/content/reply_to_id (`render_message_body`); the AI's reply envelope
+  id/role/content/created_at/reply_to_id (`render_message_body`, with
+  `render_created_at` formatting the timestamp as UTC ISO-8601); the AI's reply envelope
   is parsed by `parse_completion` and streamed through
   `extract_streamed_content`. Keep it pure so it stays unit-testable
   (`tests/test_context.py`).
-- `README.md` references `.env.example`, but that file does not exist in the repo —
-  create `.env` from the defaults in `app/core/config.py` (`.env` is gitignored;
-  `JWT_SECRET` must be overridden).
+- `.env.example` lists every setting with empty (or built-in default) values —
+  copy it to `.env` and fill in real values (`.env` is gitignored; `JWT_SECRET`
+  and the Cloudinary credentials must be set for those features to work).

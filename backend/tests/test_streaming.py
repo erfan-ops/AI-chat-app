@@ -5,6 +5,7 @@ external provider is ever contacted."""
 from __future__ import annotations
 
 import json
+import re
 from collections.abc import AsyncGenerator
 from typing import Any
 
@@ -104,12 +105,15 @@ async def test_stream_success_flow(
     assert MESSAGE_FORMAT_HINT in request.messages[0].content
     # History messages reach the provider as JSON envelopes with their ids.
     envelope = json.loads(request.messages[-1].content)
-    assert envelope == {
+    # created_at is the persisted send time (the API returns it naive-UTC, the
+    # envelope renders it as UTC ISO-8601), so compare it separately.
+    assert {key: value for key, value in envelope.items() if key != "created_at"} == {
         "id": created["id"],
         "role": "user",
         "content": "Hi, how are you?",
         "reply_to_id": None,
     }
+    assert envelope["created_at"] == f"{created['created_at'][:19]}Z"
 
 
 async def test_stream_consumes_provider_incrementally(
@@ -390,6 +394,9 @@ async def test_stream_reply_to_missing_message_returns_404(
 
 # -- Structured messages in the AI request -------------------------------------------
 
+# Envelope timestamps are UTC ISO-8601 at second precision (see render_created_at).
+ISO_UTC_PATTERN = re.compile(r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z")
+
 
 async def test_stream_reply_envelopes_history_messages_with_ids(
     client: AsyncClient, session_factory: Any, scripted_provider: ScriptedProvider
@@ -419,21 +426,27 @@ async def test_stream_reply_envelopes_history_messages_with_ids(
     # The new message keeps its real role; its envelope carries the reply ref.
     last = request.messages[-1]
     assert last.role == "user"
-    assert json.loads(last.content) == {
+    last_envelope = json.loads(last.content)
+    # created_at comes from the persisted row, so it is checked for shape here and
+    # for exact values in the pure context tests.
+    assert {key: value for key, value in last_envelope.items() if key != "created_at"} == {
         "id": created_id,
         "role": "user",
         "content": "Why?",
         "reply_to_id": target_id,
     }
-    # The assistant target is enveloped too — the AI sees its id and content.
+    assert ISO_UTC_PATTERN.fullmatch(last_envelope["created_at"])
+    # The assistant target is enveloped too — the AI sees its id, content and time.
     assistant_messages = [m for m in request.messages if m.role == "assistant"]
     assert len(assistant_messages) == 1
-    assert json.loads(assistant_messages[0].content) == {
+    assistant_envelope = json.loads(assistant_messages[0].content)
+    assert {key: value for key, value in assistant_envelope.items() if key != "created_at"} == {
         "id": target_id,
         "role": "assistant",
         "content": "You should get some rest.",
         "reply_to_id": None,
     }
+    assert ISO_UTC_PATTERN.fullmatch(assistant_envelope["created_at"])
     # The system prompt explains the envelope contract unconditionally.
     assert MESSAGE_FORMAT_HINT in request.messages[0].content
 

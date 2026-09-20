@@ -88,6 +88,7 @@ src/
     newConversation/       # character + model picker modal (+ optional persona picker)
     chat/                  # ChatView, MessageList, MessageComposer,
                            #   useSendMessage (SSE), useMessages (before_id paging),
+                           #   useMessageGestures (tap/hold menu, swipe to reply),
                            #   streamingStore (module-level store for in-flight replies)
 e2e/                       # Playwright verification scripts
 docs/openapi.json          # snapshot of the backend's OpenAPI spec

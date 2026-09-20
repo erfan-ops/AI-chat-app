@@ -55,10 +55,40 @@
 /* ---- Message rows ---- */
 
 .row {
+  position: relative;
   display: flex;
   align-items: flex-end;
   gap: 8px;
   margin-top: 2px;
+  /* Vertical scrolling (and pinch-zoom) stay with the browser; horizontal drags
+     are ours, which is what lets swipe-to-reply work without fighting the list. */
+  touch-action: pan-y pinch-zoom;
+}
+
+/* Reply affordance revealed by a right-swipe, behind the bubble it follows. */
+.swipeHint {
+  position: absolute;
+  top: 50%;
+  left: 8px;
+  z-index: 0;
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  border-radius: var(--radius-full);
+  background: var(--accent);
+  color: var(--text-on-accent);
+  pointer-events: none;
+}
+
+/* Their rows start after the avatar slot. */
+.rowTheirs .swipeHint {
+  left: 38px;
+}
+
+.swipeHint svg {
+  width: 16px;
+  height: 16px;
 }
 
 .rowGroupStart {
@@ -82,10 +112,14 @@
 
 .bubble {
   position: relative;
+  z-index: 1;
   max-width: min(72%, 560px);
   padding: 8px 12px 6px;
   border-radius: var(--radius-lg);
   box-shadow: var(--shadow-sm);
+  /* Snaps back into place when a swipe is released short of the trigger; the
+     swipe itself sets `transition: none` so the bubble tracks the finger. */
+  transition: transform 160ms ease;
 }
 
 .bubbleMine {

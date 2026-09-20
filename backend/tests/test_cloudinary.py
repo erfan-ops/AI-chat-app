@@ -35,6 +35,25 @@ CONFIGURED_SETTINGS = Settings(
     cloudinary_api_secret=API_SECRET,
 )
 
+# Pinned explicitly rather than relying on the shared settings: a developer's real
+# .env is picked up by Settings(), which would otherwise make this "unconfigured"
+# case configured.
+UNCONFIGURED_SETTINGS = Settings(
+    jwt_secret=TEST_SETTINGS.jwt_secret,
+    database_url=TEST_SETTINGS.database_url,
+    cloudinary_cloud_name="",
+    cloudinary_api_key="",
+    cloudinary_api_secret="",
+)
+
+
+@pytest_asyncio.fixture
+async def unconfigured_cloudinary(client: AsyncClient) -> None:
+    """Point the app at settings without Cloudinary credentials for one test."""
+    app.dependency_overrides[get_settings] = lambda: UNCONFIGURED_SETTINGS
+    yield
+    app.dependency_overrides[get_settings] = lambda: TEST_SETTINGS
+
 
 @pytest_asyncio.fixture
 async def configured_cloudinary(client: AsyncClient) -> None:
@@ -55,7 +74,9 @@ async def test_signature_requires_authentication(client: AsyncClient) -> None:
     assert response.json() == {"detail": "Not authenticated"}
 
 
-async def test_signature_unavailable_when_not_configured(client: AsyncClient) -> None:
+async def test_signature_unavailable_when_not_configured(
+    client: AsyncClient, unconfigured_cloudinary: None
+) -> None:
     headers, _user = await auth_user(client, "alice")
 
     response = await client.post("/cloudinary/signature", headers=headers)
