@@ -1,6 +1,7 @@
-import { useState } from 'react'
+import { useCallback, useRef, useState } from 'react'
 import type { FormEvent } from 'react'
 import { useCreateCharacter } from './useCharacters'
+import { AvatarPicker } from './AvatarPicker'
 import { Modal } from '../../components/Modal'
 import { Spinner } from '../../components/Spinner'
 import { pushToast } from '../../components/toastStore'
@@ -22,12 +23,28 @@ export function CharacterFormModal({ open, onClose, onCreated }: CharacterFormMo
   const create = useCreateCharacter()
   const [name, setName] = useState('')
   const [systemPrompt, setSystemPrompt] = useState('')
-  const [avatarUrl, setAvatarUrl] = useState('')
+  const [avatarUrl, setAvatarUrl] = useState<string | null>(null)
   const [description, setDescription] = useState('')
+  const [uploading, setUploading] = useState(false)
+  // While the crop/upload is in progress, Escape and overlay clicks should not
+  // throw away the form — they cancel nothing, they just do nothing.
+  const guardCloseRef = useRef(false)
 
   const trimmedName = name.trim()
   const busy = create.isPending
-  const canSubmit = trimmedName !== '' && !busy
+  const canSubmit = trimmedName !== '' && !busy && !uploading
+
+  // Stable identity matters: Modal re-runs its effect (which re-focuses the panel)
+  // whenever onClose changes, so an inline arrow here would steal focus on every
+  // keystroke and make the form impossible to type into.
+  const handleClose = useCallback(() => {
+    if (guardCloseRef.current) return
+    onClose()
+  }, [onClose])
+
+  function setCroppingState(next: boolean) {
+    guardCloseRef.current = next
+  }
 
   function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
@@ -35,7 +52,7 @@ export function CharacterFormModal({ open, onClose, onCreated }: CharacterFormMo
       {
         name: trimmedName,
         system_prompt: systemPrompt.trim() || null,
-        avatar_url: avatarUrl.trim() || null,
+        avatar_url: avatarUrl,
         description: description.trim() || null,
       },
       {
@@ -43,6 +60,7 @@ export function CharacterFormModal({ open, onClose, onCreated }: CharacterFormMo
           onCreated(character)
           onClose()
         },
+        // Errors keep the form open (and the uploaded avatar) so the user can retry.
         onError: (error) => {
           pushToast('error', errorMessage(error))
         },
@@ -51,7 +69,7 @@ export function CharacterFormModal({ open, onClose, onCreated }: CharacterFormMo
   }
 
   return (
-    <Modal open={open} onClose={onClose} title="New character" size="md">
+    <Modal open={open} onClose={handleClose} title="New character" size="md">
       <form onSubmit={handleSubmit}>
         <p className={styles.hint}>
           A character is the AI you&apos;ll talk to. Only the name is required —
@@ -96,18 +114,16 @@ export function CharacterFormModal({ open, onClose, onCreated }: CharacterFormMo
         </div>
 
         <div className={styles.field}>
-          <label htmlFor="character-avatar-url" className={styles.label}>
-            Avatar URL <span className={styles.optional}>(optional)</span>
-          </label>
-          <input
-            id="character-avatar-url"
-            type="text"
-            className={styles.input}
+          <span className={styles.label}>
+            Avatar <span className={styles.optional}>(optional)</span>
+          </span>
+          <AvatarPicker
             value={avatarUrl}
-            onChange={(event) => setAvatarUrl(event.target.value)}
-            maxLength={1000}
-            placeholder="https://example.com/maya.png"
+            onChange={setAvatarUrl}
+            onUploadingChange={setUploading}
+            onCroppingChange={setCroppingState}
             disabled={busy}
+            name={trimmedName || 'Character'}
           />
         </div>
 
@@ -128,7 +144,12 @@ export function CharacterFormModal({ open, onClose, onCreated }: CharacterFormMo
         </div>
 
         <div className={styles.footer}>
-          <button type="button" className={styles.cancel} onClick={onClose} disabled={busy}>
+          <button
+            type="button"
+            className={styles.cancel}
+            onClick={onClose}
+            disabled={busy || uploading}
+          >
             Cancel
           </button>
           <button type="submit" className={styles.submit} disabled={!canSubmit}>

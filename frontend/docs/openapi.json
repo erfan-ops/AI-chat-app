@@ -161,12 +161,232 @@
     ]
    }
   },
+  "/personas": {
+   "get": {
+    "tags": [
+     "personas"
+    ],
+    "summary": "List the user's personas",
+    "operationId": "list_personas_personas_get",
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {
+         "items": {
+          "$ref": "#/components/schemas/PersonaRead"
+         },
+         "type": "array",
+         "title": "Response List Personas Personas Get"
+        }
+       }
+      }
+     }
+    },
+    "security": [
+     {
+      "HTTPBearer": []
+     }
+    ]
+   },
+   "post": {
+    "tags": [
+     "personas"
+    ],
+    "summary": "Create a persona",
+    "description": "Only `name` is required. The persona belongs to the authenticated user; `user_id` is taken from the access token and never from the request body.",
+    "operationId": "create_persona_personas_post",
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/PersonaCreate"
+       }
+      }
+     },
+     "required": true
+    },
+    "responses": {
+     "201": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/PersonaRead"
+        }
+       }
+      }
+     },
+     "422": {
+      "description": "Validation Error",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      }
+     }
+    },
+    "security": [
+     {
+      "HTTPBearer": []
+     }
+    ]
+   }
+  },
+  "/personas/{persona_id}": {
+   "get": {
+    "tags": [
+     "personas"
+    ],
+    "summary": "Get one of the user's personas",
+    "operationId": "get_persona_personas__persona_id__get",
+    "security": [
+     {
+      "HTTPBearer": []
+     }
+    ],
+    "parameters": [
+     {
+      "name": "persona_id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "integer",
+       "minimum": 1,
+       "title": "Persona Id"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/PersonaRead"
+        }
+       }
+      }
+     },
+     "422": {
+      "description": "Validation Error",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      }
+     }
+    }
+   },
+   "patch": {
+    "tags": [
+     "personas"
+    ],
+    "summary": "Update a persona",
+    "operationId": "update_persona_personas__persona_id__patch",
+    "security": [
+     {
+      "HTTPBearer": []
+     }
+    ],
+    "parameters": [
+     {
+      "name": "persona_id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "integer",
+       "minimum": 1,
+       "title": "Persona Id"
+      }
+     }
+    ],
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/PersonaUpdate"
+       }
+      }
+     }
+    },
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/PersonaRead"
+        }
+       }
+      }
+     },
+     "422": {
+      "description": "Validation Error",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      }
+     }
+    }
+   },
+   "delete": {
+    "tags": [
+     "personas"
+    ],
+    "summary": "Delete a persona",
+    "description": "Conversations that used the persona are kept and fall back to no persona (USER_PERSONA_ID becomes NULL).",
+    "operationId": "delete_persona_personas__persona_id__delete",
+    "security": [
+     {
+      "HTTPBearer": []
+     }
+    ],
+    "parameters": [
+     {
+      "name": "persona_id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "integer",
+       "minimum": 1,
+       "title": "Persona Id"
+      }
+     }
+    ],
+    "responses": {
+     "204": {
+      "description": "Successful Response"
+     },
+     "422": {
+      "description": "Validation Error",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
   "/characters": {
    "get": {
     "tags": [
      "characters"
     ],
-    "summary": "List active AI characters",
+    "summary": "List AI characters",
+    "description": "Built-in characters plus the ones the authenticated user created. Another user's private characters are never listed. Administrators see every character, whatever its owner or status.",
     "operationId": "list_characters_characters_get",
     "responses": {
      "200": {
@@ -189,6 +409,51 @@
       "HTTPBearer": []
      }
     ]
+   },
+   "post": {
+    "tags": [
+     "characters"
+    ],
+    "summary": "Create an AI character",
+    "description": "Creates a character owned by the authenticated user; the owner comes from the access token, so the character is visible only to its creator. Administrators may also pass `owner_user_id` (explicit `null` creates a global character) and `status`; for anyone else those fields are rejected with 403.",
+    "operationId": "create_character_characters_post",
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/CharacterCreate"
+       }
+      }
+     },
+     "required": true
+    },
+    "responses": {
+     "201": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/CharacterRead"
+        }
+       }
+      }
+     },
+     "422": {
+      "description": "Validation Error",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      }
+     }
+    },
+    "security": [
+     {
+      "HTTPBearer": []
+     }
+    ]
    }
   },
   "/characters/{character_id}": {
@@ -196,7 +461,7 @@
     "tags": [
      "characters"
     ],
-    "summary": "Get one active AI character",
+    "summary": "Get one AI character",
     "operationId": "get_character_characters__character_id__get",
     "security": [
      {
@@ -237,6 +502,130 @@
       }
      }
     }
+   },
+   "patch": {
+    "tags": [
+     "characters"
+    ],
+    "summary": "Update an AI character",
+    "description": "Owners may edit their own characters; administrators may edit any character and additionally reassign `owner_user_id` or set `status`.",
+    "operationId": "update_character_characters__character_id__patch",
+    "security": [
+     {
+      "HTTPBearer": []
+     }
+    ],
+    "parameters": [
+     {
+      "name": "character_id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "integer",
+       "minimum": 1,
+       "title": "Character Id"
+      }
+     }
+    ],
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/CharacterUpdate"
+       }
+      }
+     }
+    },
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/CharacterRead"
+        }
+       }
+      }
+     },
+     "422": {
+      "description": "Validation Error",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      }
+     }
+    }
+   },
+   "delete": {
+    "tags": [
+     "characters"
+    ],
+    "summary": "Delete an AI character (soft delete)",
+    "description": "Marks the character DELETED; the row and any conversations referencing it are preserved. Owners may delete their own characters, administrators any character.",
+    "operationId": "delete_character_characters__character_id__delete",
+    "security": [
+     {
+      "HTTPBearer": []
+     }
+    ],
+    "parameters": [
+     {
+      "name": "character_id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "integer",
+       "minimum": 1,
+       "title": "Character Id"
+      }
+     }
+    ],
+    "responses": {
+     "204": {
+      "description": "Successful Response"
+     },
+     "422": {
+      "description": "Validation Error",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/cloudinary/signature": {
+   "post": {
+    "tags": [
+     "cloudinary"
+    ],
+    "summary": "Sign a direct-to-Cloudinary upload",
+    "description": "Returns the signature and parameters the browser needs to upload an image straight to Cloudinary. The image never passes through this API, and the API secret is never returned. Answers 503 when the CLOUDINARY_* settings are not configured.",
+    "operationId": "create_upload_signature_cloudinary_signature_post",
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/UploadSignatureRead"
+        }
+       }
+      }
+     }
+    },
+    "security": [
+     {
+      "HTTPBearer": []
+     }
+    ]
    }
   },
   "/models": {
@@ -244,8 +633,8 @@
     "tags": [
      "ai"
     ],
-    "summary": "List active AI models",
-    "description": "Models available for conversations; used to pick a conversation's model.",
+    "summary": "List AI models",
+    "description": "Models available for conversations; used to pick a conversation's model. Administrators also see inactive models.",
     "operationId": "list_models_models_get",
     "responses": {
      "200": {
@@ -268,6 +657,197 @@
       "HTTPBearer": []
      }
     ]
+   },
+   "post": {
+    "tags": [
+     "ai"
+    ],
+    "summary": "Create an AI model (admin)",
+    "description": "Administrators only. The provider and endpoint must already exist.",
+    "operationId": "create_model_models_post",
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/ModelCreate"
+       }
+      }
+     },
+     "required": true
+    },
+    "responses": {
+     "201": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ModelRead"
+        }
+       }
+      }
+     },
+     "422": {
+      "description": "Validation Error",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      }
+     }
+    },
+    "security": [
+     {
+      "HTTPBearer": []
+     }
+    ]
+   }
+  },
+  "/models/{model_id}": {
+   "get": {
+    "tags": [
+     "ai"
+    ],
+    "summary": "Get one AI model",
+    "description": "Active models for any user; administrators can also fetch inactive ones.",
+    "operationId": "get_model_models__model_id__get",
+    "security": [
+     {
+      "HTTPBearer": []
+     }
+    ],
+    "parameters": [
+     {
+      "name": "model_id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "integer",
+       "minimum": 1,
+       "title": "Model Id"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ModelRead"
+        }
+       }
+      }
+     },
+     "422": {
+      "description": "Validation Error",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      }
+     }
+    }
+   },
+   "patch": {
+    "tags": [
+     "ai"
+    ],
+    "summary": "Update an AI model (admin)",
+    "description": "Administrators only.",
+    "operationId": "update_model_models__model_id__patch",
+    "security": [
+     {
+      "HTTPBearer": []
+     }
+    ],
+    "parameters": [
+     {
+      "name": "model_id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "integer",
+       "minimum": 1,
+       "title": "Model Id"
+      }
+     }
+    ],
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/ModelUpdate"
+       }
+      }
+     }
+    },
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ModelRead"
+        }
+       }
+      }
+     },
+     "422": {
+      "description": "Validation Error",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      }
+     }
+    }
+   },
+   "delete": {
+    "tags": [
+     "ai"
+    ],
+    "summary": "Delete an AI model (admin, soft delete)",
+    "description": "Administrators only. Sets ACTIVE=0 so conversations and telemetry that reference the model keep their foreign keys.",
+    "operationId": "delete_model_models__model_id__delete",
+    "security": [
+     {
+      "HTTPBearer": []
+     }
+    ],
+    "parameters": [
+     {
+      "name": "model_id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "integer",
+       "minimum": 1,
+       "title": "Model Id"
+      }
+     }
+    ],
+    "responses": {
+     "204": {
+      "description": "Successful Response"
+     },
+     "422": {
+      "description": "Validation Error",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      }
+     }
+    }
    }
   },
   "/conversations": {
@@ -758,6 +1338,86 @@
     ],
     "title": "CharacterBrief"
    },
+   "CharacterCreate": {
+    "properties": {
+     "name": {
+      "type": "string",
+      "maxLength": 100,
+      "minLength": 1,
+      "title": "Name"
+     },
+     "description": {
+      "anyOf": [
+       {
+        "type": "string",
+        "maxLength": 500
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Description"
+     },
+     "avatar_url": {
+      "anyOf": [
+       {
+        "type": "string",
+        "maxLength": 1000
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Avatar Url"
+     },
+     "system_prompt": {
+      "anyOf": [
+       {
+        "type": "string",
+        "maxLength": 20000
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "System Prompt",
+      "description": "Persona / system prompt sent to the model"
+     },
+     "owner_user_id": {
+      "anyOf": [
+       {
+        "type": "integer",
+        "minimum": 1.0
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Owner User Id",
+      "description": "Admin only. Omit to own it yourself; null creates a global character."
+     },
+     "status": {
+      "anyOf": [
+       {
+        "type": "string",
+        "maxLength": 20,
+        "minLength": 1
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Status",
+      "description": "Admin only. Defaults to ACTIVE."
+     }
+    },
+    "type": "object",
+    "required": [
+     "name"
+    ],
+    "title": "CharacterCreate",
+    "description": "Body for POST /characters.\n\nFor a normal user the owner is always the authenticated user \u00e2\u20ac\u201d never the request\nbody. An administrator may additionally pass ``owner_user_id`` (explicit ``null``\ncreates a global/built-in character) and ``status``.\nLengths mirror the ``CHARACTERS`` column widths."
+   },
    "CharacterRead": {
     "properties": {
      "id": {
@@ -790,10 +1450,37 @@
       ],
       "title": "Avatar Url"
      },
+     "system_prompt": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "System Prompt"
+     },
+     "status": {
+      "type": "string",
+      "title": "Status"
+     },
      "created_at": {
       "type": "string",
       "format": "date-time",
       "title": "Created At"
+     },
+     "owner_user_id": {
+      "anyOf": [
+       {
+        "type": "integer"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Owner User Id",
+      "description": "null for built-in characters; the creator for private ones"
      }
     },
     "type": "object",
@@ -802,9 +1489,95 @@
      "name",
      "description",
      "avatar_url",
-     "created_at"
+     "system_prompt",
+     "status",
+     "created_at",
+     "owner_user_id"
     ],
     "title": "CharacterRead"
+   },
+   "CharacterUpdate": {
+    "properties": {
+     "name": {
+      "anyOf": [
+       {
+        "type": "string",
+        "maxLength": 100,
+        "minLength": 1
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Name"
+     },
+     "description": {
+      "anyOf": [
+       {
+        "type": "string",
+        "maxLength": 500
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Description"
+     },
+     "avatar_url": {
+      "anyOf": [
+       {
+        "type": "string",
+        "maxLength": 1000
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Avatar Url"
+     },
+     "system_prompt": {
+      "anyOf": [
+       {
+        "type": "string",
+        "maxLength": 20000
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "System Prompt"
+     },
+     "owner_user_id": {
+      "anyOf": [
+       {
+        "type": "integer",
+        "minimum": 1.0
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Owner User Id",
+      "description": "Admin only. null makes the character global."
+     },
+     "status": {
+      "anyOf": [
+       {
+        "type": "string",
+        "maxLength": 20,
+        "minLength": 1
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Status",
+      "description": "Admin only."
+     }
+    },
+    "type": "object",
+    "title": "CharacterUpdate",
+    "description": "Body for PATCH /characters/{id} \u00e2\u20ac\u201d at least one field must be provided.\n\nOwners may edit ``name``/``description``/``avatar_url``/``system_prompt`` on their\nown characters; ``owner_user_id`` and ``status`` are administrator-only."
    },
    "ConversationCreate": {
     "properties": {
@@ -838,6 +1611,19 @@
        }
       ],
       "title": "Title"
+     },
+     "user_persona_id": {
+      "anyOf": [
+       {
+        "type": "integer",
+        "minimum": 1.0
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "User Persona Id",
+      "description": "Optional persona the user role-plays as. Must belong to the authenticated user. Omit for no persona \u00e2\u20ac\u201d the AI then just follows the character prompt."
      }
     },
     "type": "object",
@@ -872,6 +1658,17 @@
         "type": "null"
        }
       ]
+     },
+     "user_persona": {
+      "anyOf": [
+       {
+        "$ref": "#/components/schemas/PersonaBrief"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "description": "null when the conversation has no persona"
      },
      "title": {
       "anyOf": [
@@ -1089,8 +1886,7 @@
       "anyOf": [
        {
         "type": "integer",
-        "minimum": 1,
-        "title": "Reply To Id"
+        "minimum": 1.0
        },
        {
         "type": "null"
@@ -1132,8 +1928,7 @@
      "reply_to_id": {
       "anyOf": [
        {
-        "type": "integer",
-        "title": "Reply To Id"
+        "type": "integer"
        },
        {
         "type": "null"
@@ -1183,6 +1978,64 @@
     ],
     "title": "ModelBrief"
    },
+   "ModelCreate": {
+    "properties": {
+     "provider_id": {
+      "type": "integer",
+      "minimum": 1.0,
+      "title": "Provider Id"
+     },
+     "endpoint_id": {
+      "type": "integer",
+      "minimum": 1.0,
+      "title": "Endpoint Id"
+     },
+     "model_name": {
+      "type": "string",
+      "maxLength": 150,
+      "minLength": 1,
+      "title": "Model Name"
+     },
+     "display_name": {
+      "anyOf": [
+       {
+        "type": "string",
+        "maxLength": 100
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Display Name"
+     },
+     "context_window": {
+      "anyOf": [
+       {
+        "type": "integer",
+        "minimum": 1.0
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Context Window"
+     },
+     "active": {
+      "type": "boolean",
+      "title": "Active",
+      "description": "Matches the ACTIVE 0/1 column default",
+      "default": false
+     }
+    },
+    "type": "object",
+    "required": [
+     "provider_id",
+     "endpoint_id",
+     "model_name"
+    ],
+    "title": "ModelCreate",
+    "description": "Body for POST /models (administrators only)."
+   },
    "ModelRead": {
     "properties": {
      "id": {
@@ -1215,6 +2068,10 @@
       ],
       "title": "Provider"
      },
+     "provider_id": {
+      "type": "integer",
+      "title": "Provider Id"
+     },
      "context_window": {
       "anyOf": [
        {
@@ -1225,6 +2082,19 @@
        }
       ],
       "title": "Context Window"
+     },
+     "active": {
+      "type": "boolean",
+      "title": "Active"
+     },
+     "endpoint_id": {
+      "type": "integer",
+      "title": "Endpoint Id"
+     },
+     "created_at": {
+      "type": "string",
+      "format": "date-time",
+      "title": "Created At"
      }
     },
     "type": "object",
@@ -1233,10 +2103,280 @@
      "model_name",
      "display_name",
      "provider",
-     "context_window"
+     "provider_id",
+     "context_window",
+     "active",
+     "endpoint_id",
+     "created_at"
     ],
     "title": "ModelRead",
-    "description": "An active model offered for conversations (API keys never exposed)."
+    "description": "A model offered for conversations.\n\nEndpoint credentials (``AI_ENDPOINTS.BASE_URL`` / ``API_KEY``) are never exposed \u00e2\u20ac\u201d\nonly the endpoint's id."
+   },
+   "ModelUpdate": {
+    "properties": {
+     "provider_id": {
+      "anyOf": [
+       {
+        "type": "integer",
+        "minimum": 1.0
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Provider Id"
+     },
+     "endpoint_id": {
+      "anyOf": [
+       {
+        "type": "integer",
+        "minimum": 1.0
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Endpoint Id"
+     },
+     "model_name": {
+      "anyOf": [
+       {
+        "type": "string",
+        "maxLength": 150,
+        "minLength": 1
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Model Name"
+     },
+     "display_name": {
+      "anyOf": [
+       {
+        "type": "string",
+        "maxLength": 100
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Display Name"
+     },
+     "context_window": {
+      "anyOf": [
+       {
+        "type": "integer",
+        "minimum": 1.0
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Context Window"
+     },
+     "active": {
+      "anyOf": [
+       {
+        "type": "boolean"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Active"
+     }
+    },
+    "type": "object",
+    "title": "ModelUpdate",
+    "description": "Body for PATCH /models/{id} (administrators only) \u00e2\u20ac\u201d at least one field."
+   },
+   "PersonaBrief": {
+    "properties": {
+     "id": {
+      "type": "integer",
+      "title": "Id"
+     },
+     "name": {
+      "type": "string",
+      "title": "Name"
+     }
+    },
+    "type": "object",
+    "required": [
+     "id",
+     "name"
+    ],
+    "title": "PersonaBrief"
+   },
+   "PersonaCreate": {
+    "properties": {
+     "name": {
+      "type": "string",
+      "maxLength": 100,
+      "minLength": 1,
+      "title": "Name"
+     },
+     "gender": {
+      "anyOf": [
+       {
+        "type": "string",
+        "maxLength": 10
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Gender"
+     },
+     "description": {
+      "anyOf": [
+       {
+        "type": "string",
+        "maxLength": 1500
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Description"
+     },
+     "age": {
+      "anyOf": [
+       {
+        "type": "integer",
+        "maximum": 99.0,
+        "minimum": 0.0
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Age"
+     }
+    },
+    "type": "object",
+    "required": [
+     "name"
+    ],
+    "title": "PersonaCreate",
+    "description": "Body for POST /personas. The owner always comes from the access token."
+   },
+   "PersonaRead": {
+    "properties": {
+     "id": {
+      "type": "integer",
+      "title": "Id"
+     },
+     "user_id": {
+      "type": "integer",
+      "title": "User Id"
+     },
+     "name": {
+      "type": "string",
+      "title": "Name"
+     },
+     "gender": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Gender"
+     },
+     "description": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Description"
+     },
+     "age": {
+      "anyOf": [
+       {
+        "type": "integer"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Age"
+     }
+    },
+    "type": "object",
+    "required": [
+     "id",
+     "user_id",
+     "name",
+     "gender",
+     "description",
+     "age"
+    ],
+    "title": "PersonaRead"
+   },
+   "PersonaUpdate": {
+    "properties": {
+     "name": {
+      "anyOf": [
+       {
+        "type": "string",
+        "maxLength": 100,
+        "minLength": 1
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Name"
+     },
+     "gender": {
+      "anyOf": [
+       {
+        "type": "string",
+        "maxLength": 10
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Gender"
+     },
+     "description": {
+      "anyOf": [
+       {
+        "type": "string",
+        "maxLength": 1500
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Description"
+     },
+     "age": {
+      "anyOf": [
+       {
+        "type": "integer",
+        "maximum": 99.0,
+        "minimum": 0.0
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Age"
+     }
+    },
+    "type": "object",
+    "title": "PersonaUpdate",
+    "description": "Body for PATCH /personas/{id} \u00e2\u20ac\u201d at least one field must be provided."
    },
    "RegisterRequest": {
     "properties": {
@@ -1274,6 +2414,41 @@
     ],
     "title": "RegisterRequest",
     "description": "Body for POST /auth/register."
+   },
+   "UploadSignatureRead": {
+    "properties": {
+     "signature": {
+      "type": "string",
+      "title": "Signature"
+     },
+     "timestamp": {
+      "type": "integer",
+      "title": "Timestamp"
+     },
+     "api_key": {
+      "type": "string",
+      "title": "Api Key"
+     },
+     "cloud_name": {
+      "type": "string",
+      "title": "Cloud Name"
+     },
+     "folder": {
+      "type": "string",
+      "title": "Folder",
+      "description": "Cloudinary folder the signed upload must target"
+     }
+    },
+    "type": "object",
+    "required": [
+     "signature",
+     "timestamp",
+     "api_key",
+     "cloud_name",
+     "folder"
+    ],
+    "title": "UploadSignatureRead",
+    "description": "Response for POST /cloudinary/signature.\n\n``folder`` and ``timestamp`` are echoed so the browser can send exactly the\nparameters that were signed."
    },
    "UserRead": {
     "properties": {
@@ -1377,7 +2552,7 @@
     },
     "type": "object",
     "title": "UserUpdate",
-    "description": "Body for PATCH /me — at least one field must be provided."
+    "description": "Body for PATCH /me \u00e2\u20ac\u201d at least one field must be provided."
    },
    "ValidationError": {
     "properties": {

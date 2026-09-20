@@ -72,14 +72,18 @@ src/
     client.ts              #   fetch wrapper: base URL, bearer token, ApiError, 401 handling
     sse.ts                 #   minimal SSE parser (POST streams can't use EventSource)
     auth.ts characters.ts models.ts conversations.ts messages.ts
+    cloudinary.ts          #   signed upload: signature from the API, file straight to Cloudinary
   session/authSession.ts   # JWT + user in localStorage, expiry, reactive subscription
   utils/dates.ts errors.ts # naive-UTC ISO parsing (backend stores UTC without zone), errors
+  utils/cloudinary.ts      # avatar delivery URLs: on-the-fly resize + auto format/quality
+  utils/cropImage.ts       # 1:1 crop → 512×512 WebP in the browser (canvas, no upload)
   components/              # shared UI: Avatar, Modal, Spinner, EmptyState, ErrorState,
                            #   ToastHost (+ toastStore), inline SVG icon set
   features/
     auth/AuthPage          # sign-in / account creation (the API requires a Bearer token)
     conversations/         # sidebar, list items (rename/delete), infinite list query
-    characters/            # cached character lookup (avatars), create + profile dialogs
+    characters/            # cached character lookup (avatars), create + profile dialogs,
+                           #   avatar picker (crop → upload to Cloudinary)
     personas/              # user personas: cached list + create-persona form modal
     newConversation/       # character + model picker modal (+ optional persona picker)
     chat/                  # ChatView, MessageList, MessageComposer,
@@ -128,6 +132,15 @@ its family at the front of the `body` stack.
   The separate `description` field is a short human-facing blurb and is shown in
   the character profile dialog. Characters are listed by name + avatar (with a
   colored initial fallback when `avatar_url` is `null`).
+- **Avatars are uploaded to Cloudinary**, not pasted as URLs: the browser crops the
+  picked image to 1:1, renders a 512×512 WebP (`utils/cropImage.ts`), asks the API
+  for a signature and posts the file straight to Cloudinary — the image never passes
+  through the backend, and the API secret never reaches the browser. The stored
+  `avatar_url` is Cloudinary's `secure_url`; `Avatar` rewrites it on delivery
+  (`utils/cloudinary.ts`) so each display size fetches a resized, auto-formatted,
+  auto-quality image. Uploads are optional — a character without one shows the
+  initial. Requires the backend's `CLOUDINARY_*` settings; unconfigured, the picker
+  reports the API's "Cloudinary is not configured" error.
 - The conversation list only exposes a `{id, name}` character brief and no last-message
   preview, so sidebar items show: character avatar, title (or character name), model
   name, persona (as "as …" when one was picked), and relative time of the last activity.

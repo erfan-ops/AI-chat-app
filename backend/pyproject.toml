@@ -75,3 +75,10 @@ python_version = "3.13"
 strict = true
 warn_unreachable = true
 exclude = ["tests/"]
+
+# The Cloudinary SDK ships no py.typed marker, so strict mode would refuse to
+# analyze it. Only the signing helper is used, and its behaviour is covered by
+# tests/test_cloudinary.py.
+[[tool.mypy.overrides]]
+module = ["cloudinary", "cloudinary.*"]
+ignore_missing_imports = true

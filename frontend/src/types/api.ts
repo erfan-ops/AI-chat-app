@@ -59,6 +59,17 @@ export interface Character {
   owner_user_id: number | null
 }
 
+/** Response for POST /cloudinary/signature — everything the browser needs to
+ *  upload an avatar straight to Cloudinary. The API secret is never returned.
+ *  `folder`, `timestamp` and `signature` must be sent back verbatim. */
+export interface UploadSignature {
+  signature: string
+  timestamp: number
+  api_key: string
+  cloud_name: string
+  folder: string
+}
+
 /** Body for POST /characters. Only `name` is required; the rest are optional
  *  and stored as null when omitted. `owner_user_id` and `status` are
  *  administrator-only and must never be sent by this app (the owner always

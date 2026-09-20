@@ -14,7 +14,8 @@
   "dependencies": {
     "@tanstack/react-query": "^5.101.4",
     "react": "^19.2.8",
-    "react-dom": "^19.2.8"
+    "react-dom": "^19.2.8",
+    "react-easy-crop": "^6.2.3"
   },
   "devDependencies": {
     "@types/node": "^24.13.3",

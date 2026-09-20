@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { getCloudinaryAvatarUrl } from '../utils/cloudinary'
 import styles from './Avatar.module.css'
 
 /** Deterministic pastel background per name, so the same character keeps the
@@ -32,10 +33,16 @@ export interface AvatarProps {
 }
 
 /** Circular avatar: the character's image when available, otherwise a colored
- *  disc with the first letter of the name. */
+ *  disc with the first letter of the name.
+ *
+ *  `src` is the stored URL; it is resized for delivery here, so every avatar in
+ *  the app requests an image at its display size rather than the full master. */
 export function Avatar({ name, src, size = 40, className }: AvatarProps) {
-  const [imageFailed, setImageFailed] = useState(false)
-  const showImage = src !== null && src !== undefined && src !== '' && !imageFailed
+  // Which URL failed, rather than a boolean: a boolean latch would keep showing
+  // the initial even after the avatar is replaced with one that loads.
+  const [failedSrc, setFailedSrc] = useState<string | null>(null)
+  const imageSrc = getCloudinaryAvatarUrl(src, size)
+  const showImage = imageSrc !== '' && imageSrc !== failedSrc
 
   return (
     <span
@@ -45,10 +52,10 @@ export function Avatar({ name, src, size = 40, className }: AvatarProps) {
     >
       {showImage ? (
         <img
-          src={src}
+          src={imageSrc}
           alt=""
           className={styles.image}
-          onError={() => setImageFailed(true)}
+          onError={() => setFailedSrc(imageSrc)}
           draggable={false}
         />
       ) : (

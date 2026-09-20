@@ -6,6 +6,7 @@ from app.api.routes import (
     ai,
     auth,
     characters,
+    cloudinary,
     conversations,
     memories,
     messages,
@@ -18,6 +19,7 @@ api_router.include_router(auth.router)
 api_router.include_router(users.router)
 api_router.include_router(personas.router)
 api_router.include_router(characters.router)
+api_router.include_router(cloudinary.router)
 api_router.include_router(ai.router)
 api_router.include_router(conversations.router)
 api_router.include_router(messages.router)

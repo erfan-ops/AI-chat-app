@@ -9,6 +9,7 @@ from app.schemas.ai import (
     ModelUpdate,
 )
 from app.schemas.auth import LoginRequest, LoginResponse, RegisterRequest
+from app.schemas.cloudinary import UploadSignatureRead
 from app.schemas.conversations import ConversationCreate, ConversationRead, ConversationUpdate
 from app.schemas.memories import MemoryRead
 from app.schemas.messages import MessageCreate, MessageRead
@@ -34,6 +35,7 @@ __all__ = [
     "PersonaRead",
     "PersonaUpdate",
     "RegisterRequest",
+    "UploadSignatureRead",
     "UserRead",
     "UserUpdate",
 ]

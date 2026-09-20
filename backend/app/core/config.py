@@ -47,6 +47,14 @@ class Settings(BaseSettings):
     ai_base_url: str = ""
     ai_model: str = ""
 
+    # Cloudinary image hosting. Avatars are uploaded straight from the browser
+    # using a signature minted here, so the API secret never leaves the server
+    # (and the image bytes never pass through the API). Empty values disable the
+    # feature: POST /cloudinary/signature answers 503.
+    cloudinary_cloud_name: str = ""
+    cloudinary_api_key: str = ""
+    cloudinary_api_secret: str = ""
+
     ai_context_max_messages: int = Field(default=50, ge=1)
     ai_default_context_chars: int = Field(default=16000, ge=100)
     ai_max_memories: int = Field(default=5, ge=0)

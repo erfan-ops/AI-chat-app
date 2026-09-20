@@ -152,6 +152,7 @@ Copy `.env.example` to `.env` and fill in real values (never commit `.env`):
 | `AI_DEFAULT_CONTEXT_CHARS` | `16000` | Default token budget ≈ chars/4 |
 | `AI_TEMPERATURE` / `AI_MAX_TOKENS` | `0.8` / `1024` | Generation parameters |
 | `AI_STREAM_TIMEOUT_SECONDS` | `120` | Provider read timeout |
+| `CLOUDINARY_CLOUD_NAME` / `CLOUDINARY_API_KEY` / `CLOUDINARY_API_SECRET` | *(empty)* | Cloudinary credentials for signed avatar uploads. The secret stays server-side; unset disables the feature (`POST /cloudinary/signature` → 503) |
 
 ## Installation & running
 

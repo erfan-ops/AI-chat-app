@@ -18,6 +18,7 @@ from app.db.repositories.users import UserRepository
 from app.exceptions import ForbiddenError, UnauthorizedError
 from app.services.ai_service import AIService, ProviderFactory
 from app.services.auth_service import AuthService
+from app.services.cloudinary_service import CloudinaryService
 
 bearer_scheme = HTTPBearer(auto_error=False, description="JWT access token from POST /auth/login")
 
@@ -37,6 +38,11 @@ def get_auth_service(settings: Settings) -> AuthService:
 @lru_cache
 def get_ai_service(settings: Settings) -> AIService:
     return AIService(settings)
+
+
+@lru_cache
+def get_cloudinary_service(settings: Settings) -> CloudinaryService:
+    return CloudinaryService(settings)
 
 
 def get_session_factory() -> async_sessionmaker[AsyncSession]:
