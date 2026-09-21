@@ -1,8 +1,10 @@
 """AI character (persona) catalog endpoints.
 
-Shared paths: a normal user is scoped to built-in characters plus their own, an
-administrator (``ROLE_admin``) reaches every character. All of that is decided from
-the authenticated user's stored role — never from the request body.
+Shared paths: listing is scoped to built-in characters plus the caller's own for
+everyone, administrators included. An administrator (``ROLE_admin``) reaches every
+character through the other paths — reading one by id, and create/update/delete.
+All of that is decided from the authenticated user's stored role — never from the
+request body.
 """
 
 from __future__ import annotations
@@ -29,8 +31,9 @@ character_service = CharacterService()
     summary="List AI characters",
     description=(
         "Built-in characters plus the ones the authenticated user created. "
-        "Another user's private characters are never listed. Administrators see "
-        "every character, whatever its owner or status."
+        "Another user's private characters are never listed. Administrators are "
+        "scoped the same way here; they reach other characters through "
+        "`GET /characters/{character_id}` and the write endpoints."
     ),
 )
 async def list_characters(

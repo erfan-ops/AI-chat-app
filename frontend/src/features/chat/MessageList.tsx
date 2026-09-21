@@ -310,7 +310,9 @@ function MessageRow({
               <span className={styles.quoteText}>{repliedTo.content}</span>
             </button>
           )}
-          <p className={styles.text}>{message.content}</p>
+          {/* pre-wrap: message text is plain text, so the newlines the user typed
+              (Shift+Enter) and any in the AI's reply must survive rendering. */}
+          <p className={`${styles.text} pre-wrap`}>{message.content}</p>
           {groupEnd && <span className={styles.time}>{formatTime(message.created_at)}</span>}
         </div>
       </div>
@@ -342,7 +344,7 @@ function StreamingRow({
             <span className={styles.dot} />
           </span>
         ) : (
-          <p className={styles.text}>
+          <p className={`${styles.text} pre-wrap`}>
             {text}
             <span className={styles.caret} aria-hidden="true" />
           </p>

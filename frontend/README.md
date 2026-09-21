@@ -80,10 +80,13 @@ src/
   components/              # shared UI: Avatar, Modal, Spinner, EmptyState, ErrorState,
                            #   ToastHost (+ toastStore), inline SVG icon set
   features/
-    auth/AuthPage          # sign-in / account creation (the API requires a Bearer token)
+    auth/AuthPage          # sign-in / account creation, plus the SMS-code step for
+                           #   accounts with two-step verification enabled
     conversations/         # sidebar, list items (rename/delete), infinite list query
     characters/            # cached character lookup (avatars), create + profile dialogs,
                            #   avatar picker (crop → upload to Cloudinary)
+    models/                # shared ['models'] query (picker + settings)
+    settings/SettingsModal # profile (display name, default model) + two-step verification
     personas/              # user personas: cached list + create-persona form modal
     newConversation/       # character + model picker modal (+ optional persona picker)
     chat/                  # ChatView, MessageList, MessageComposer,
@@ -107,10 +110,22 @@ its family at the front of the `body` stack.
 
 ## API integration notes
 
-- **Auth**: all endpoints except `/auth/register` and `/auth/login` need a JWT Bearer
-  token. The client attaches it automatically; a `401` clears the local session and
-  returns the user to the sign-in screen. Token expiry follows the API's
-  `expires_in` (minutes).
+- **Auth**: all endpoints except `/auth/register`, `/auth/login` and
+  `/auth/login/otp` need a JWT Bearer token. The client attaches it automatically;
+  a `401` clears the local session and returns the user to the sign-in screen, and
+  token expiry follows the API's `expires_in` (minutes). When the account has
+  two-step verification on, `POST /auth/login` returns `otp_required` + a
+  `challenge_id` instead of a token, the sign-in screen switches to a code prompt,
+  and the token only arrives from `POST /auth/login/otp`. A wrong or expired code is
+  a 400 — never a 401, because this client would treat that as an expired session and
+  sign the user out.
+- **Settings**: the sidebar footer opens a settings dialog — display name and
+  default model (`PATCH /me`), and two-step verification (`/me/otp/*`). Enabling it
+  sends a code to a mobile number entered as 10 digits after a fixed `+98` prefix
+  (the stored value is the canonical local number, never the formatted one), and the
+  flag only turns on once that code is verified. `/me/otp/*` rejections are 400-level
+  for the same reason as above, and a successful change updates the cached session
+  via `updateSessionUser` so the sidebar reflects it without a reload.
 - **Errors**: the backend returns `{"detail": string}` (or a pydantic list for 422).
   The client normalizes both into a user-readable `ApiError`.
 - **Sending messages**: `POST /conversations/{id}/messages` persists the user message,

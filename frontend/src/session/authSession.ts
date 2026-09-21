@@ -70,6 +70,15 @@ export function setSession(login: LoginResponse): void {
   emit()
 }
 
+/** Replace the stored profile after a settings change (display name, 2FA state).
+ *  Assigns a new object because `useSyncExternalStore` compares by identity. */
+export function updateSessionUser(user: User): void {
+  if (!current) return // never resurrect a cleared or expired session
+  current = { ...current, user }
+  persist()
+  emit()
+}
+
 /** Returns true when a session was actually cleared (false if already signed out). */
 export function clearSession(): boolean {
   const hadSession = current !== null

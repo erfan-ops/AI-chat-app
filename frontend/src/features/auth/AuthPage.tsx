@@ -1,17 +1,19 @@
 import { useState } from 'react'
 import type { FormEvent } from 'react'
 import { useMutation } from '@tanstack/react-query'
-import { login, register } from '../../api/auth'
+import { login, loginWithOtp, register } from '../../api/auth'
 import { setSession } from '../../session/authSession'
 import { ApiError } from '../../api/client'
 import { errorMessage } from '../../utils/errors'
 import { ChatBubbleIcon, SparklesIcon } from '../../components/Icons'
 import { Spinner } from '../../components/Spinner'
+import type { OtpRequiredResponse } from '../../types/api'
 import styles from './AuthPage.module.css'
 
 type Mode = 'login' | 'register'
 
 const USERNAME_PATTERN = /^[A-Za-z0-9_.-]+$/
+const NON_DIGITS = /[^0-9]/g
 
 /** Public sign-in / account-creation screen. All other API endpoints require
  *  a Bearer token, so this gate is the entry point of the app. */
@@ -21,6 +23,10 @@ export function AuthPage() {
   const [password, setPassword] = useState('')
   const [displayName, setDisplayName] = useState('')
   const [error, setError] = useState<string | null>(null)
+  /** Set when the password was accepted but a second factor is required. The tabs
+   *  stay mounted underneath, so only the form body changes. */
+  const [challenge, setChallenge] = useState<OtpRequiredResponse | null>(null)
+  const [code, setCode] = useState('')
 
   const submit = useMutation({
     mutationFn: async () => {
@@ -34,14 +40,52 @@ export function AuthPage() {
       // Registering only creates the account — signing in returns the token.
       return login({ username: username.trim(), password })
     },
-    onSuccess: (loginResponse) => {
-      setSession(loginResponse)
+    onSuccess: (response) => {
+      // Narrow before storing: an OTP challenge has no token, and setSession would
+      // otherwise persist an empty session and render a signed-in shell.
+      if ('otp_required' in response) {
+        setChallenge(response)
+        setCode('')
+        setPassword('')
+        return
+      }
+      setSession(response)
     },
     onError: (err) => {
       setError(errorMessage(err))
       if (err instanceof ApiError && err.status === 401) setPassword('')
     },
   })
+
+  const verify = useMutation({
+    mutationFn: () =>
+      loginWithOtp({ challenge_id: challenge?.challenge_id ?? '', code }),
+    onSuccess: (loginResponse) => {
+      setSession(loginResponse)
+    },
+    // A wrong or expired code is a normal, retryable outcome here — the user is
+    // not signed in yet, and no session is cleared.
+    onError: (err) => {
+      setError(errorMessage(err))
+      setCode('')
+    },
+  })
+
+  function handleVerify(event: FormEvent) {
+    event.preventDefault()
+    setError(null)
+    if (code.length !== 6) {
+      setError('Enter the 6-digit code from the SMS.')
+      return
+    }
+    verify.mutate()
+  }
+
+  function cancelChallenge() {
+    setChallenge(null)
+    setCode('')
+    setError(null)
+  }
 
   function handleSubmit(event: FormEvent) {
     event.preventDefault()
@@ -110,6 +154,56 @@ export function AuthPage() {
             </button>
           </div>
 
+          {challenge ? (
+            <form className={styles.form} onSubmit={handleVerify} noValidate>
+              <h2 className={styles.heading}>Two-step verification</h2>
+
+              {error && (
+                <p className={styles.errorBanner} role="alert">
+                  {error}
+                </p>
+              )}
+
+              <p className={styles.otpHint}>
+                We sent a 6-digit code by SMS. It expires in{' '}
+                {Math.round(challenge.code_expires_in_seconds / 60)} minutes.
+              </p>
+
+              <div className={styles.field}>
+                <label htmlFor="auth-otp-code" className={styles.label}>
+                  Verification code
+                </label>
+                <input
+                  id="auth-otp-code"
+                  className={`${styles.input} ${styles.otpInput}`}
+                  type="text"
+                  inputMode="numeric"
+                  autoComplete="one-time-code"
+                  maxLength={6}
+                  value={code}
+                  onChange={(event) => setCode(event.target.value.replace(NON_DIGITS, ''))}
+                  disabled={verify.isPending}
+                  autoFocus
+                  required
+                />
+              </div>
+
+              <button type="submit" className={styles.submit} disabled={verify.isPending}>
+                {verify.isPending ? (
+                  <>
+                    <Spinner size={16} label="Verifying code" />
+                    Verifying…
+                  </>
+                ) : (
+                  'Verify and sign in'
+                )}
+              </button>
+
+              <button type="button" className={styles.backToSignIn} onClick={cancelChallenge}>
+                Back to sign in
+              </button>
+            </form>
+          ) : (
           <form className={styles.form} onSubmit={handleSubmit} noValidate>
             <h2 className={styles.heading}>
               {mode === 'login' ? 'Welcome back' : 'Create your account'}
@@ -188,6 +282,7 @@ export function AuthPage() {
               )}
             </button>
           </form>
+          )}
         </section>
       </div>
     </main>

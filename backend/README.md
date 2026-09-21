@@ -75,7 +75,7 @@ open while the provider streams.
 - **argon2-cffi** (Argon2id password hashing), **PyJWT** (signed access tokens)
 - **httpx** (async provider HTTP), **uvicorn** (ASGI server)
 - **uv** for dependency/environment management
-- **ruff** (lint + format), **mypy** (strict), **pytest** (+ pytest-asyncio)
+- **ruff** (lint + format), **ty** (type checking), **pytest** (+ pytest-asyncio)
 
 ## Project structure
 
@@ -98,10 +98,10 @@ app/
     providers/            # openai (OpenAI-compatible incl. DeepSeek),
                           #   anthropic, mock
   exceptions/             # AppError hierarchy → HTTP status codes
-tests/                    # 41 tests: auth, authorization, CRUD, streaming, context
+tests/                    # 164 tests: auth (incl. 2FA), authorization, CRUD, streaming, context
 docs/database.md          # discovered Oracle schema documentation
 scripts/                  # SQL inspection scripts used for discovery
-pyproject.toml            # dependencies + ruff/mypy/pytest configuration
+pyproject.toml            # dependencies + ruff/ty/pytest configuration
 .env.example              # configuration template (no real secrets)
 ```
 
@@ -173,10 +173,10 @@ FastAPI also serves the OpenAPI schema at `/openapi.json`.
 Run tests / checks:
 
 ```bash
-uv run pytest            # 41 tests — SQLite in-memory, no external services needed
+uv run pytest            # 164 tests — SQLite in-memory, no external services needed
 uv run ruff check app tests
 uv run ruff format --check app tests
-uv run mypy app
+uv run ty check app
 ```
 
 ## Authentication
@@ -208,7 +208,8 @@ uv run mypy app
 | `POST /auth/register` | Create account (public) |
 | `POST /auth/login` | Get JWT access token (public) |
 | `GET /me` · `PATCH /me` | Profile; update display name / default model |
-| `GET /characters` · `GET /characters/{id}` | Active AI characters: built-in + the user's own (admin: all) |
+| `GET /characters` | Active AI characters: built-in + the user's own — the same scope for administrators |
+| `GET /characters/{id}` | One character (admin: any owner or status) |
 | `POST /characters` | Create a private character owned by the caller |
 | `PATCH /characters/{id}` · `DELETE` | Edit / soft-delete your own character (admin: any) |
 | `GET /models` · `GET /models/{id}` | Active AI models (admin: inactive ones too) |
@@ -240,7 +241,8 @@ case-sensitive. Admin-only routes use the `require_admin` dependency
 
 | | Regular user | `ROLE_admin` |
 |---|---|---|
-| List / read characters | Active built-in + own | Every character, any owner or status |
+| List characters | Active built-in + own | Active built-in + own (same scope) |
+| Read one character | Active built-in or own | Any character, any owner or status |
 | Create character | Owned by self | Any owner, incl. global (`owner_user_id: null`) |
 | Update / delete character | Own characters only | Any character |
 | `owner_user_id`, `status` in a character body | `403` | Allowed |

@@ -56,24 +56,36 @@ async def test_admin_creates_character_for_another_user(
     assert response.status_code == 404
 
 
-async def test_admin_lists_and_reads_every_character(
+async def test_admin_list_is_scoped_but_can_read_any_character(
     client: AsyncClient, session_factory: Any
 ) -> None:
-    headers_admin, _admin = await auth_admin(client, session_factory)
-    headers_alice, alice = await auth_user(client, "alice")
-    headers_bob, bob = await auth_user(client, "bob")
+    """Listing is scoped for administrators too — only id-based reads reach everything.
+
+    ``GET /characters`` is not an admin overview: it returns active built-in
+    characters plus the caller's own, so an admin's list leaks neither another
+    user's private character nor an inactive one of their own. ``GET
+    /characters/{id}`` is the path that reaches any character.
+    """
+    headers_admin, admin = await auth_admin(client, session_factory)
+    headers_alice, _alice = await auth_user(client, "alice")
+    headers_bob, _bob = await auth_user(client, "bob")
 
     alice_character = await create_character(client, headers_alice, name="Alice's Nova")
     bob_character = await create_character(client, headers_bob, name="Bob's Rex")
+    await create_character(client, headers_admin, name="Admin's Own")
+    retired = await create_character(
+        client, headers_admin, name="Admin's Retired", status="DELETED"
+    )
 
     response = await client.get("/characters", headers=headers_admin)
     assert response.status_code == 200
     listed = response.json()
-    assert [c["name"] for c in listed] == ["Maya", "Alice's Nova", "Bob's Rex"]
-    assert [c["owner_user_id"] for c in listed] == [None, alice["id"], bob["id"]]
+    assert [c["name"] for c in listed] == ["Maya", "Admin's Own"]
+    assert [c["owner_user_id"] for c in listed] == [None, admin["id"]]
 
-    # And can fetch either private character directly.
-    for character_id in (alice_character["id"], bob_character["id"]):
+    # Reading one by id is what gets an admin to any other user's character, and to
+    # their own inactive one.
+    for character_id in (alice_character["id"], bob_character["id"], retired["id"]):
         response = await client.get(f"/characters/{character_id}", headers=headers_admin)
         assert response.status_code == 200
 

@@ -27,6 +27,11 @@ class User(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime)
     updated_at: Mapped[datetime] = mapped_column(DateTime)
     last_login_at: Mapped[datetime | None] = mapped_column(DateTime)
+    # Verified mobile as the 10-digit local Iranian number (NUMBER(10,0) in
+    # Oracle — the +98 form is presentation only and does not fit).
+    mobile_number: Mapped[int | None] = mapped_column(Integer)
+    # 0/1 flag, NOT NULL DEFAULT 0 in Oracle: 1 = an SMS code is required at login.
+    otp_enabled: Mapped[int] = mapped_column(Integer, server_default=text("0"))
     # Matches the DB default 'ROLE_user'; the app never inserts a value.
     role: Mapped[str] = mapped_column(String(20), server_default=text("'ROLE_user'"))
 

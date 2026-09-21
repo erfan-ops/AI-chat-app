@@ -55,6 +55,22 @@ class Settings(BaseSettings):
     cloudinary_api_key: str = ""
     cloudinary_api_secret: str = ""
 
+    # SMS.ir one-time codes for two-step verification. An empty API key disables
+    # the feature: the OTP endpoints answer 503, exactly like Cloudinary above.
+    # The template is a "send verify code" template whose parameters are USERNAME
+    # and CODE (see docs/otp-2fa-notes.md).
+    sms_ir_api_key: str = ""
+    sms_ir_template_id: int = Field(default=601570, ge=1)
+    sms_ir_base_url: str = "https://api.sms.ir"
+    sms_ir_timeout_seconds: float = Field(default=10.0, gt=0)
+    # Code lifetime, resend cooldown, per-challenge attempt cap and daily send cap.
+    # The cooldown is a security control, not a nicety: without it a password
+    # holder could request a fresh code per guess and the attempt cap would be moot.
+    otp_code_ttl_seconds: int = Field(default=120, ge=30)
+    otp_resend_cooldown_seconds: int = Field(default=60, ge=0)
+    otp_max_verify_attempts: int = Field(default=5, ge=1)
+    otp_max_sends_per_day: int = Field(default=10, ge=1)
+
     ai_context_max_messages: int = Field(default=50, ge=1)
     ai_default_context_chars: int = Field(default=16000, ge=100)
     ai_max_memories: int = Field(default=5, ge=0)

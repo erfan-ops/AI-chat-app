@@ -28,7 +28,7 @@ uv run pytest tests/test_context.py::test_foo   # one test
 
 uv run ruff check app tests              # lint
 uv run ruff format app tests             # format (double quotes, line length 100)
-uv run mypy app                          # strict type checking (tests/ excluded)
+uv run ty check app                      # type checking (tests/ excluded)
 ```
 
 `uv run python scripts/verify_oracle.py` is a separate live-Oracle verification:
@@ -99,6 +99,14 @@ and uses the `AI_API_KEY` / `AI_BASE_URL` / `AI_MODEL` env fallbacks.
   mid-stream are `error` SSE events, not HTTP errors.
 - The login throttle (5 failures → 60 s, `429` + `Retry-After`) is in-memory per
   process — not shared across workers.
+- **Two-step verification** (`app/services/two_factor_service.py`, `otp_service.py`,
+  `sms_service.py`): the second step never issues a token — `POST /auth/login` returns
+  `otp_required` + a `challenge_id` and `POST /auth/login/otp` completes it. Mobile
+  numbers are stored in the local 10-digit form (`MOBILE_NUMBER` is `NUMBER(10)`) and
+  sent to SMS.ir that way. OTP challenges live in-process like the login throttle
+  (**single worker or sticky sessions**; see `docs/otp-2fa-notes.md`). An incorrect or
+  expired code is **400, never 401** — the frontend signs out on any authenticated 401.
+  Never log or return a code, and never send a code before the password is verified.
 
 ## Invariants & gotchas
 

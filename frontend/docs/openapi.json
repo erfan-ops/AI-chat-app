@@ -2,7 +2,7 @@
  "openapi": "3.1.0",
  "info": {
   "title": "AI Chat API",
-  "description": "Backend API for the AI chat application: authentication, AI characters, conversations, messages, memories, and streamed AI replies (SSE). All endpoints except `/auth/register` and `/auth/login` require a Bearer token.",
+  "description": "Backend API for the AI chat application: authentication (including SMS two-step verification), AI characters, conversations, messages, memories, and streamed AI replies (SSE). All endpoints except `/auth/register`, `/auth/login` and `/auth/login/otp` require a Bearer token.",
   "version": "0.1.0"
  },
  "paths": {
@@ -54,13 +54,63 @@
      "auth"
     ],
     "summary": "Log in and obtain an access token",
-    "description": "Exchanges username/password for a signed JWT access token. Send it as `Authorization: Bearer <token>` on protected endpoints.",
+    "description": "Exchanges username/password for a signed JWT access token. Send it as `Authorization: Bearer <token>` on protected endpoints.\n\nWhen the account has two-step verification enabled, no token is issued: the response instead carries `otp_required` plus a `challenge_id`, and the login is completed with `POST /auth/login/otp`.",
     "operationId": "login_auth_login_post",
     "requestBody": {
      "content": {
       "application/json": {
        "schema": {
         "$ref": "#/components/schemas/LoginRequest"
+       }
+      }
+     },
+     "required": true
+    },
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {
+         "anyOf": [
+          {
+           "$ref": "#/components/schemas/LoginResponse"
+          },
+          {
+           "$ref": "#/components/schemas/OtpRequiredResponse"
+          }
+         ],
+         "title": "Response Login Auth Login Post"
+        }
+       }
+      }
+     },
+     "422": {
+      "description": "Validation Error",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/auth/login/otp": {
+   "post": {
+    "tags": [
+     "auth"
+    ],
+    "summary": "Complete a two-step login",
+    "description": "Second step for accounts with two-step verification: exchanges the `challenge_id` from `POST /auth/login` plus the code received by SMS for the same access token a normal login would have returned. An incorrect or expired code is rejected with 400 \u00e2\u20ac\u201d never 401, which would sign the caller out of an unrelated session.",
+    "operationId": "login_with_otp_auth_login_otp_post",
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/LoginOtpRequest"
        }
       }
      },
@@ -149,6 +199,127 @@
        "application/json": {
         "schema": {
          "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      }
+     }
+    },
+    "security": [
+     {
+      "HTTPBearer": []
+     }
+    ]
+   }
+  },
+  "/me/otp/enable": {
+   "post": {
+    "tags": [
+     "users"
+    ],
+    "summary": "Start enabling two-step verification",
+    "description": "Sends a one-time code to the supplied mobile number. Nothing is stored and the second factor stays off until `POST /me/otp/verify` confirms the code.",
+    "operationId": "start_otp_enable_me_otp_enable_post",
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/OtpEnableRequest"
+       }
+      }
+     },
+     "required": true
+    },
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/OtpChallengeRead"
+        }
+       }
+      }
+     },
+     "422": {
+      "description": "Validation Error",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      }
+     }
+    },
+    "security": [
+     {
+      "HTTPBearer": []
+     }
+    ]
+   }
+  },
+  "/me/otp/verify": {
+   "post": {
+    "tags": [
+     "users"
+    ],
+    "summary": "Confirm the code and enable two-step verification",
+    "description": "Verifies the code sent by `/me/otp/enable`, stores the verified mobile number and turns two-step verification on. An invalid or expired code is rejected with 400 and leaves the account unchanged.",
+    "operationId": "verify_otp_enable_me_otp_verify_post",
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/OtpVerifyRequest"
+       }
+      }
+     },
+     "required": true
+    },
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/UserRead"
+        }
+       }
+      }
+     },
+     "422": {
+      "description": "Validation Error",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      }
+     }
+    },
+    "security": [
+     {
+      "HTTPBearer": []
+     }
+    ]
+   }
+  },
+  "/me/otp/disable": {
+   "post": {
+    "tags": [
+     "users"
+    ],
+    "summary": "Disable two-step verification",
+    "description": "Turns two-step verification off for the authenticated user and discards any code still in flight. The verified mobile number is kept.",
+    "operationId": "disable_otp_me_otp_disable_post",
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/UserRead"
         }
        }
       }
@@ -386,7 +557,7 @@
      "characters"
     ],
     "summary": "List AI characters",
-    "description": "Built-in characters plus the ones the authenticated user created. Another user's private characters are never listed. Administrators see every character, whatever its owner or status.",
+    "description": "Built-in characters plus the ones the authenticated user created. Another user's private characters are never listed. Administrators are scoped the same way here; they reach other characters through `GET /characters/{character_id}` and the write endpoints.",
     "operationId": "list_characters_characters_get",
     "responses": {
      "200": {
@@ -1750,6 +1921,30 @@
     "type": "object",
     "title": "HTTPValidationError"
    },
+   "LoginOtpRequest": {
+    "properties": {
+     "challenge_id": {
+      "type": "string",
+      "maxLength": 128,
+      "minLength": 16,
+      "title": "Challenge Id"
+     },
+     "code": {
+      "type": "string",
+      "maxLength": 6,
+      "minLength": 6,
+      "pattern": "[0-9]{6}",
+      "title": "Code"
+     }
+    },
+    "type": "object",
+    "required": [
+     "challenge_id",
+     "code"
+    ],
+    "title": "LoginOtpRequest",
+    "description": "Body for POST /auth/login/otp \u00e2\u20ac\u201d the second step of a two-step login."
+   },
    "LoginRequest": {
     "properties": {
      "username": {
@@ -2191,6 +2386,98 @@
     "title": "ModelUpdate",
     "description": "Body for PATCH /models/{id} (administrators only) \u00e2\u20ac\u201d at least one field."
    },
+   "OtpChallengeRead": {
+    "properties": {
+     "challenge_id": {
+      "type": "string",
+      "title": "Challenge Id"
+     },
+     "code_expires_in_seconds": {
+      "type": "integer",
+      "title": "Code Expires In Seconds",
+      "description": "Lifetime of the code, in seconds"
+     },
+     "mobile_hint": {
+      "type": "string",
+      "title": "Mobile Hint",
+      "description": "Masked number the code was sent to"
+     }
+    },
+    "type": "object",
+    "required": [
+     "challenge_id",
+     "code_expires_in_seconds",
+     "mobile_hint"
+    ],
+    "title": "OtpChallengeRead",
+    "description": "A code has been sent; the challenge id ties the next call to this attempt."
+   },
+   "OtpEnableRequest": {
+    "properties": {
+     "mobile_number": {
+      "type": "string",
+      "maxLength": 32,
+      "minLength": 1,
+      "title": "Mobile Number"
+     }
+    },
+    "type": "object",
+    "required": [
+     "mobile_number"
+    ],
+    "title": "OtpEnableRequest",
+    "description": "Body for POST /me/otp/enable \u00e2\u20ac\u201d the local 10-digit mobile number.\n\nLength is only bounded to keep the payload sane; the shape is validated by\n``normalize_mobile``, which explains what is wrong instead of returning a\nschema error."
+   },
+   "OtpRequiredResponse": {
+    "properties": {
+     "otp_required": {
+      "type": "boolean",
+      "const": true,
+      "title": "Otp Required",
+      "default": true
+     },
+     "challenge_id": {
+      "type": "string",
+      "title": "Challenge Id"
+     },
+     "code_expires_in_seconds": {
+      "type": "integer",
+      "title": "Code Expires In Seconds",
+      "description": "Lifetime of the code, in seconds"
+     }
+    },
+    "type": "object",
+    "required": [
+     "challenge_id",
+     "code_expires_in_seconds"
+    ],
+    "title": "OtpRequiredResponse",
+    "description": "The password was correct, but two-step verification is enabled.\n\nNo token is issued yet, and deliberately no hint about which number the code\nwent to: that would disclose the phone suffix to anyone holding the password,\nwhich is exactly what the second factor protects against."
+   },
+   "OtpVerifyRequest": {
+    "properties": {
+     "challenge_id": {
+      "type": "string",
+      "maxLength": 128,
+      "minLength": 16,
+      "title": "Challenge Id"
+     },
+     "code": {
+      "type": "string",
+      "maxLength": 6,
+      "minLength": 6,
+      "pattern": "[0-9]{6}",
+      "title": "Code"
+     }
+    },
+    "type": "object",
+    "required": [
+     "challenge_id",
+     "code"
+    ],
+    "title": "OtpVerifyRequest",
+    "description": "Body for POST /me/otp/verify."
+   },
    "PersonaBrief": {
     "properties": {
      "id": {
@@ -2506,6 +2793,22 @@
        }
       ],
       "title": "Last Login At"
+     },
+     "mobile_number": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Mobile Number"
+     },
+     "otp_enabled": {
+      "type": "boolean",
+      "title": "Otp Enabled",
+      "default": false
      }
     },
     "type": "object",

@@ -19,6 +19,8 @@ from app.exceptions import ForbiddenError, UnauthorizedError
 from app.services.ai_service import AIService, ProviderFactory
 from app.services.auth_service import AuthService
 from app.services.cloudinary_service import CloudinaryService
+from app.services.otp_service import OtpService
+from app.services.sms_service import SmsService
 
 bearer_scheme = HTTPBearer(auto_error=False, description="JWT access token from POST /auth/login")
 
@@ -43,6 +45,23 @@ def get_ai_service(settings: Settings) -> AIService:
 @lru_cache
 def get_cloudinary_service(settings: Settings) -> CloudinaryService:
     return CloudinaryService(settings)
+
+
+@lru_cache
+def get_sms_service(settings: Annotated[Settings, Depends(get_settings)]) -> SmsService:
+    """Overridable in tests, so no test can reach the real SMS provider.
+
+    The ``Depends`` on ``settings`` matters: without it FastAPI treats a
+    Pydantic-model parameter as a request *body* field when this is used as a
+    dependency.
+    """
+    return SmsService(settings)
+
+
+@lru_cache
+def get_otp_service(settings: Annotated[Settings, Depends(get_settings)]) -> OtpService:
+    """In-process challenge store; overridable in tests (see conftest)."""
+    return OtpService(settings)
 
 
 def get_session_factory() -> async_sessionmaker[AsyncSession]:

@@ -28,9 +28,11 @@ from app.ai.base import (
 )
 from app.api.dependencies import (
     get_auth_service,
+    get_otp_service,
     get_provider_factory,
     get_session_factory,
     get_settings,
+    get_sms_service,
 )
 from app.core.config import Settings
 from app.core.time import utcnow
@@ -40,11 +42,16 @@ from app.db.models.character import Character
 from app.db.models.conversation import Conversation
 from app.db.models.message import Message
 from app.db.models.user import ADMIN_ROLE, User
+from app.exceptions import ServiceUnavailableError
 from app.main import app
+from app.services.otp_service import OtpService
 
 TEST_SETTINGS = Settings(
     jwt_secret="test-secret-key-for-testing-only-0123456789",
     database_url="sqlite+aiosqlite://",
+    # Pinned so a developer's real .env can never make tests believe SMS is
+    # configured — that would send live texts from the suite.
+    sms_ir_api_key="",
 )
 
 TEST_PASSWORD = "password123"
@@ -154,6 +161,94 @@ async def _reset_login_attempts() -> AsyncIterator[None]:
     """Keep the login throttle from leaking state between tests."""
     yield
     get_auth_service(TEST_SETTINGS).reset_attempts()
+
+
+# -- Two-step verification (SMS OTP) -------------------------------------------------
+
+
+class FakeClock:
+    """Deterministic clock: expiry and cooldowns are tested without sleeping."""
+
+    def __init__(self, start: float = 1000.0) -> None:
+        self.now = start
+
+    def __call__(self) -> float:
+        return self.now
+
+    def advance(self, seconds: float) -> None:
+        self.now += seconds
+
+
+class RecordingSmsService:
+    """Stands in for ``SmsService``: records what would be sent, never goes out."""
+
+    def __init__(self, *, fail: bool = False) -> None:
+        self.sent: list[dict[str, Any]] = []
+        self.fail = fail
+
+    async def send_verify_code(
+        self,
+        *,
+        mobile: str,
+        code: str,
+        display_name: str | None,
+        username: str,
+        user_id: int,
+    ) -> None:
+        if self.fail:
+            raise ServiceUnavailableError("Could not send the verification code. Please try again.")
+        self.sent.append(
+            {
+                "mobile": mobile,
+                "code": code,
+                "display_name": display_name or username,
+                "user_id": user_id,
+            }
+        )
+
+    @property
+    def last_code(self) -> str:
+        """The code the API generated for the most recent send."""
+        assert self.sent, "no verification code was sent"
+        return str(self.sent[-1]["code"])
+
+
+# Pinned rather than inherited: Settings() also reads the developer's .env, which
+# would make "SMS not configured" configured (and reach the network).
+SMS_UNCONFIGURED_SETTINGS = Settings(
+    jwt_secret=TEST_SETTINGS.jwt_secret,
+    database_url=TEST_SETTINGS.database_url,
+    sms_ir_api_key="",
+)
+
+
+@pytest_asyncio.fixture(autouse=True)
+async def clock() -> FakeClock:
+    """One clock per test, driving OTP expiry and cooldowns."""
+    return FakeClock()
+
+
+@pytest_asyncio.fixture(autouse=True)
+async def otp_service(clock: FakeClock) -> OtpService:
+    """The challenge store requests actually use, sharing one clock per test."""
+    service = OtpService(TEST_SETTINGS, clock=clock)
+    app.dependency_overrides[get_otp_service] = lambda: service
+    return service
+
+
+@pytest_asyncio.fixture(autouse=True)
+async def sms() -> RecordingSmsService:
+    """Installed for every test, so none of them can call the real provider."""
+    fake = RecordingSmsService()
+    app.dependency_overrides[get_sms_service] = lambda: fake
+    return fake
+
+
+@pytest_asyncio.fixture(autouse=True)
+async def _reset_otp_challenges(otp_service: OtpService) -> AsyncIterator[None]:
+    """Keep OTP challenges from leaking state between tests."""
+    yield
+    otp_service.reset_all()
 
 
 @pytest_asyncio.fixture

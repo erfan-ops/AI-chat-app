@@ -20,19 +20,19 @@ dependencies = [
 [project.optional-dependencies]
 dev = [
     "aiosqlite>=0.20",
-    "mypy>=1.13",
     "pytest>=8.3",
     "pytest-asyncio>=0.25",
     "ruff>=0.8",
+    "ty>=0.0.82",
 ]
 
 [dependency-groups]
 dev = [
     "aiosqlite>=0.20",
-    "mypy>=1.13",
     "pytest>=8.3",
     "pytest-asyncio>=0.25",
     "ruff>=0.8",
+    "ty>=0.0.82",
 ]
 
 [build-system]
@@ -69,16 +69,3 @@ quote-style = "double"
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
 testpaths = ["tests"]
-
-[tool.mypy]
-python_version = "3.13"
-strict = true
-warn_unreachable = true
-exclude = ["tests/"]
-
-# The Cloudinary SDK ships no py.typed marker, so strict mode would refuse to
-# analyze it. Only the signing helper is used, and its behaviour is covered by
-# tests/test_cloudinary.py.
-[[tool.mypy.overrides]]
-module = ["cloudinary", "cloudinary.*"]
-ignore_missing_imports = true

@@ -1,7 +1,6 @@
 import { useMemo, useState } from 'react'
-import { useQuery } from '@tanstack/react-query'
-import { listModels } from '../../api/models'
 import { CharacterFormModal } from '../characters/CharacterFormModal'
+import { useModels } from '../models/useModels'
 import { useCharacters } from '../characters/useCharacters'
 import { usePersonas } from '../personas/usePersonas'
 import { PersonaFormModal } from '../personas/PersonaFormModal'
@@ -25,7 +24,6 @@ export interface NewConversationModalProps {
   onCreated: (conversationId: number) => void
 }
 
-const modelsQueryKey = ['models'] as const
 const EMPTY_CHARACTERS: Character[] = []
 const EMPTY_MODELS: AIModel[] = []
 const EMPTY_PERSONAS: Persona[] = []
@@ -39,7 +37,7 @@ const EMPTY_PERSONAS: Persona[] = []
  */
 export function NewConversationModal({ open, onClose, onCreated }: NewConversationModalProps) {
   const charactersQuery = useCharacters()
-  const modelsQuery = useQuery({ queryKey: modelsQueryKey, queryFn: listModels })
+  const modelsQuery = useModels()
   const personasQuery = usePersonas()
   const session = useSession()
   const create = useCreateConversation()

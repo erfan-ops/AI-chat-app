@@ -35,3 +35,23 @@ class LoginResponse(BaseModel):
     token_type: Literal["bearer"] = "bearer"
     expires_in: int = Field(description="Token lifetime in minutes")
     user: UserRead
+
+
+class OtpRequiredResponse(BaseModel):
+    """The password was correct, but two-step verification is enabled.
+
+    No token is issued yet, and deliberately no hint about which number the code
+    went to: that would disclose the phone suffix to anyone holding the password,
+    which is exactly what the second factor protects against.
+    """
+
+    otp_required: Literal[True] = True
+    challenge_id: str
+    code_expires_in_seconds: int = Field(description="Lifetime of the code, in seconds")
+
+
+class LoginOtpRequest(BaseModel):
+    """Body for POST /auth/login/otp — the second step of a two-step login."""
+
+    challenge_id: str = Field(min_length=16, max_length=128)
+    code: str = Field(min_length=6, max_length=6, pattern=r"[0-9]{6}")

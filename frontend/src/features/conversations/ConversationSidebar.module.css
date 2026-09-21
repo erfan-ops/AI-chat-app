@@ -247,3 +247,27 @@
   overflow: hidden;
   text-overflow: ellipsis;
 }
+
+/* Settings entry point. Sized like the header's icon button and kept inside the
+   fixed-width sidebar, so the footer cannot widen it. */
+.footerAction {
+  display: grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  border-radius: var(--radius-sm);
+  color: var(--text-3);
+  flex-shrink: 0;
+  margin-left: auto;
+  transition: background 120ms ease, color 120ms ease;
+}
+
+.footerAction:hover {
+  background: var(--bg-hover);
+  color: var(--text-1);
+}
+
+.footerAction svg {
+  width: 18px;
+  height: 18px;
+}

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from datetime import datetime
 
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 
 class UserRead(BaseModel):
@@ -20,6 +20,18 @@ class UserRead(BaseModel):
     default_model_id: int | None
     created_at: datetime
     last_login_at: datetime | None
+    # Verified mobile number, as the canonical 10-digit local form.
+    mobile_number: str | None = None
+    # True once two-step verification is active (SMS code required at login).
+    otp_enabled: bool = False
+
+    @field_validator("mobile_number", mode="before")
+    @classmethod
+    def _format_mobile(cls, value: object) -> object:
+        """Render the NUMBER(10) column as a string so no digit is ever dropped."""
+        if isinstance(value, int) and not isinstance(value, bool):
+            return f"{value:010d}"
+        return value
 
 
 class UserUpdate(BaseModel):

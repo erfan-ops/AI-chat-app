@@ -75,9 +75,11 @@ def create_app() -> FastAPI:
         title=settings.app_name,
         version="0.1.0",
         description=(
-            "Backend API for the AI chat application: authentication, "
-            "AI characters, conversations, messages, memories, and streamed AI replies (SSE). "
-            "All endpoints except `/auth/register` and `/auth/login` require a Bearer token."
+            "Backend API for the AI chat application: authentication (including SMS "
+            "two-step verification), AI characters, conversations, messages, memories, "
+            "and streamed AI replies (SSE). "
+            "All endpoints except `/auth/register`, `/auth/login` and `/auth/login/otp` "
+            "require a Bearer token."
         ),
         lifespan=lifespan,
     )
@@ -96,7 +98,11 @@ def create_app() -> FastAPI:
 
     @app.exception_handler(AppError)
     async def app_error_handler(_request: Request, exc: AppError) -> JSONResponse:
-        headers = {"Retry-After": "60"} if isinstance(exc, RateLimitError) else None
+        headers = (
+            {"Retry-After": str(exc.retry_after_seconds or 60)}
+            if isinstance(exc, RateLimitError)
+            else None
+        )
         return JSONResponse(
             status_code=exc.status_code, content={"detail": exc.detail}, headers=headers
         )

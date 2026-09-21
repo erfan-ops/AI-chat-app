@@ -19,6 +19,11 @@ the API. Nothing is hardcoded or mocked.
 
 - **Accounts** — registration and login with Argon2id password hashing and signed
   JWT access tokens; failed-login throttling (5 attempts → 60 s lockout).
+- **Settings & two-step verification** — change your display name and default
+  model, and protect sign-in with an SMS one-time code: enabling it verifies a
+  mobile number first, codes expire after two minutes and are single-use, and a
+  code is required before any token is issued. Password-only accounts are
+  unaffected.
 - **AI characters** — built-in characters (visible to everyone) plus user-created
   private ones; each carries a system prompt that shapes its personality.
 - **Streaming chat** — AI replies are *truly* incremental: each generated chunk is
@@ -35,8 +40,10 @@ the API. Nothing is hardcoded or mocked.
   endpoints and Anthropic, or a deterministic mock provider for development. Which
   provider, endpoint, API key, and model a conversation uses is resolved per
   conversation from the database.
-- **Admin role** — administrators (set in the database) get full management of
-  characters and the model catalog; regular users manage only their own.
+- **Admin role** — administrators (set in the database) manage any character and
+  the whole model catalog; regular users manage only their own. Character *listing*
+  is scoped the same way for everyone (built-in + your own) — administrators reach
+  other characters through id-based reads and CRUD.
 - **Modern UI** — light/dark theme (follows the OS), mobile-friendly layout,
   avatars with initial fallbacks, typing indicator, and a toasts/error system.
   Persian text renders in a bundled IRANYekanX webfont (Latin keeps the system
@@ -87,7 +94,7 @@ tokens return the user to the sign-in screen automatically.
 | --- | --- |
 | Frontend | React 19, TypeScript, Vite, TanStack Query, CSS Modules, oxlint, Playwright (e2e) |
 | Backend | Python 3.13+, FastAPI, SQLAlchemy 2.x (async), python-oracledb (thin mode), Pydantic v2, Argon2id, PyJWT, httpx, uvicorn |
-| Tooling | `uv` (Python deps), npm (frontend deps), ruff + mypy (backend QA) |
+| Tooling | `uv` (Python deps), npm (frontend deps), ruff + ty (backend QA) |
 | Database | Oracle (existing 9-table schema); tests run on in-memory SQLite — no Oracle needed |
 | AI providers | DeepSeek / OpenAI-compatible, Anthropic, deterministic mock |
 
@@ -102,7 +109,7 @@ backend/
     ai/                 #   provider abstraction + context building
     schemas/            #   Pydantic contracts (incl. SSE payloads)
     core/               #   config, security, logging
-  tests/                # 41 tests — in-memory SQLite, no external services
+  tests/                # 164 tests — in-memory SQLite, no external services
   scripts/              # SQL inspection + one-off migration scripts
   docs/database.md      # the discovered Oracle schema
 frontend/
@@ -196,10 +203,10 @@ database credentials or API keys. `frontend/.env.example` is the template.
 
 ```bash
 # Backend (from backend/)
-uv run pytest                 # 41 tests — in-memory SQLite, no Oracle needed
+uv run pytest                 # 164 tests — in-memory SQLite, no Oracle needed
 uv run ruff check app tests   # lint
 uv run ruff format --check app tests
-uv run mypy app               # strict type checking
+uv run ty check app           # type checking
 
 # Frontend (from frontend/)
 npm run lint                  # oxlint

@@ -26,7 +26,7 @@ uv run pytest                                   # full suite — SQLite in-memor
 uv run pytest tests/test_streaming.py::test_stream_success_flow   # one test
 uv run ruff check app tests              # lint
 uv run ruff format app tests             # format (double quotes, line length 100)
-uv run mypy app                          # strict type checking (tests/ excluded)
+uv run ty check app                      # type checking (tests/ excluded)
 ```
 
 ### Frontend (`frontend/` — React 19 + TypeScript + Vite)
@@ -79,13 +79,19 @@ frontend/ React 19 SPA: feature folders, TanStack Query for server state, SSE vi
 - **Reply flow**: any message (user or assistant) can carry `reply_to_id`;
   `MessageList` renders the quote by looking the target up in loaded pages
   (degrades gracefully when the target is older than the loaded window).
+- **Settings & two-step verification**: the sidebar footer opens
+  `features/settings/SettingsModal` (display name, default model, SMS two-step
+  verification). When 2FA is on, `POST /auth/login` returns `otp_required` instead of
+  a token and `AuthPage` switches to a code prompt; the session user is refreshed
+  through `authSession.updateSessionUser`. Rejections there are 400-level on purpose —
+  the client signs out on any authenticated 401.
 
 ## Gotchas
 
 - Backend: `uv run` from `backend/` (root has no Python env). Frontend: `npm`
   from `frontend/`. Each component directory keeps its own `.gitignore`, README, and env files
-  (`.env.example` exists in `frontend/`; `backend/.env` is created from
-  defaults in `app/core/config.py`).
+  (both have a `.env.example`; copy it to `.env` and fill in real values —
+  `JWT_SECRET` and the Cloudinary/SMS keys have no usable defaults).
 - Tests: the backend suite never touches Oracle (in-memory SQLite + a scripted
   provider — see `tests/conftest.py`). One pre-existing failure,
   `tests/test_personas.py::test_create_persona_validation`, fails identically

@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from 'react'
 import { ConversationSidebar } from './features/conversations/ConversationSidebar'
 import { ChatView, NoConversationPlaceholder } from './features/chat/ChatView'
 import { NewConversationModal } from './features/newConversation/NewConversationModal'
+import { SettingsModal } from './features/settings/SettingsModal'
 import styles from './AppShell.module.css'
 
 const ACTIVE_CONVERSATION_KEY = 'ai-chat.activeConversation'
@@ -29,6 +30,7 @@ export function AppShell() {
   )
   const [sidebarOpen, setSidebarOpen] = useState(true)
   const [newChatOpen, setNewChatOpen] = useState(false)
+  const [settingsOpen, setSettingsOpen] = useState(false)
   // Bumped on every open so the picker remounts with a fresh form.
   const [newChatSession, setNewChatSession] = useState(0)
 
@@ -78,6 +80,7 @@ export function AppShell() {
           activeConversationId={activeConversationId}
           onSelectConversation={selectConversation}
           onNewConversation={openNewChat}
+          onOpenSettings={() => setSettingsOpen(true)}
         />
       </div>
 
@@ -99,6 +102,8 @@ export function AppShell() {
         onClose={() => setNewChatOpen(false)}
         onCreated={handleCreated}
       />
+
+      <SettingsModal open={settingsOpen} onClose={() => setSettingsOpen(false)} />
     </div>
   )
 }

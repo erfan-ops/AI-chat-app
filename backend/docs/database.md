@@ -88,6 +88,8 @@ All `VARCHAR2` columns use byte semantics (`CHAR_USED = B`).
 | CREATED_AT | TIMESTAMP(6) | N | `systimestamp` | |
 | UPDATED_AT | TIMESTAMP(6) | N | `systimestamp` | |
 | LAST_LOGIN_AT | TIMESTAMP(6) | Y | — | Set on successful login |
+| MOBILE_NUMBER | NUMBER(10) | Y | — | Verified mobile as the **local 10-digit** form (`9123456789`). The `+98` international form does not fit this column; it is presentation only |
+| OTP_ENABLED | NUMBER(1) | N | `0` | `1` = an SMS code is required at login. Only set after the mobile number is verified |
 | ROLE | VARCHAR2(20) | N | `'ROLE_user'` | Spring-style role name; app never overrides on insert |
 
 - **Account table** of the application. Currently **empty**.

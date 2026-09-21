@@ -11,6 +11,7 @@ import {
   ChatBubbleIcon,
   LogOutIcon,
   PlusIcon,
+  SettingsIcon,
 } from '../../components/Icons'
 import { ConversationListItem } from './ConversationListItem'
 import styles from './ConversationSidebar.module.css'
@@ -19,12 +20,14 @@ export interface ConversationSidebarProps {
   activeConversationId: number | null
   onSelectConversation: (id: number) => void
   onNewConversation: () => void
+  onOpenSettings: () => void
 }
 
 export function ConversationSidebar({
   activeConversationId,
   onSelectConversation,
   onNewConversation,
+  onOpenSettings,
 }: ConversationSidebarProps) {
   const session = useSession()
   const queryClient = useQueryClient()
@@ -130,6 +133,15 @@ export function ConversationSidebar({
           <p className={styles.userName}>{user?.display_name ?? user?.username}</p>
           {user?.display_name && <p className={styles.userHandle}>@{user.username}</p>}
         </div>
+        <button
+          type="button"
+          className={styles.footerAction}
+          onClick={onOpenSettings}
+          aria-label="Settings"
+          title="Settings"
+        >
+          <SettingsIcon aria-hidden="true" />
+        </button>
       </footer>
     </aside>
   )

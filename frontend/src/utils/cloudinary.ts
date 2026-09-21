@@ -26,7 +26,7 @@ export function getCloudinaryAvatarUrl(url: string | null | undefined, size: num
   const marker = url.indexOf(UPLOAD_MARKER)
   if (marker === -1) return url
 
-  const px = Math.max(1, Math.round(size))
+  const px = Math.max(1, Math.round(size*2)) // temporary double the size to not lose quality when the page is zoomed in
   const after = marker + UPLOAD_MARKER.length
   return `${url.slice(0, after)}c_fill,h_${px},w_${px}/q_auto/f_auto/${url.slice(after)}`
 }

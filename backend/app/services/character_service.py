@@ -2,8 +2,11 @@
 
 Authorization rules, all enforced here (never in the route):
 
-* **Read** — a normal user sees active built-in characters plus their own; an
-  administrator sees every character, any owner and any status.
+* **List** — scoped identically for everyone, administrators included: active
+  built-in characters plus the caller's own. Another user's private characters and
+  any non-active character never appear.
+* **Read one** — a normal user may read an active built-in character or one they
+  own; an administrator may read any character, any owner and any status.
 * **Write** — a normal user may edit or delete only a character they own; an
   administrator may act on any character.
 * ``owner_user_id`` and ``status`` are administrator-only. A non-admin who sends one
@@ -39,8 +42,6 @@ ADMIN_EDITABLE_FIELDS = USER_EDITABLE_FIELDS | CHARACTER_ADMIN_FIELDS
 class CharacterService:
     async def list_for_user(self, db: AsyncSession, actor: User) -> list[Character]:
         repo = CharacterRepository(db)
-        if actor.is_admin:
-            return await repo.list_all()
         return await repo.list_visible(actor.id)
 
     async def get_for_user(self, db: AsyncSession, character_id: int, actor: User) -> Character:

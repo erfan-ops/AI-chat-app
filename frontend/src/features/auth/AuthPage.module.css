@@ -218,3 +218,31 @@
     padding: 24px 26px 32px;
   }
 }
+
+/* ---- Two-step verification ---- */
+
+.otpHint {
+  margin: 0 0 4px;
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--text-2);
+}
+
+.otpInput {
+  letter-spacing: 0.35em;
+  font-size: 18px;
+  font-weight: 620;
+}
+
+.backToSignIn {
+  margin-top: 4px;
+  font-size: 13.5px;
+  font-weight: 600;
+  color: var(--text-3);
+  transition: color 120ms ease;
+}
+
+.backToSignIn:hover {
+  color: var(--text-1);
+  text-decoration: underline;
+}

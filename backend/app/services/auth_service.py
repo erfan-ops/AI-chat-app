@@ -15,7 +15,16 @@ from app.core.security import PasswordManager, TokenManager
 from app.core.time import utcnow
 from app.db.models.user import User
 from app.db.repositories.users import UserRepository
-from app.exceptions import ConflictError, ForbiddenError, RateLimitError, UnauthorizedError
+from app.exceptions import (
+    BadRequestError,
+    ConflictError,
+    ForbiddenError,
+    RateLimitError,
+    ServiceUnavailableError,
+    UnauthorizedError,
+)
+from app.services.otp_service import OtpService
+from app.services.sms_service import SmsService
 
 logger = get_logger("app.services.auth")
 
@@ -68,6 +77,14 @@ class LoginResult:
     expires_in_minutes: int
 
 
+@dataclass(frozen=True)
+class OtpChallengeResult:
+    """The password was correct, but a code must be verified before a token exists."""
+
+    challenge_id: str
+    expires_in_seconds: int
+
+
 class AuthService:
     def __init__(
         self,
@@ -77,6 +94,7 @@ class AuthService:
         tokens: TokenManager | None = None,
         attempts: LoginAttemptTracker | None = None,
     ) -> None:
+        self._settings = settings
         self._passwords = passwords or PasswordManager()
         self._tokens = tokens or TokenManager(
             settings.jwt_secret, settings.jwt_algorithm, settings.access_token_expire_minutes
@@ -117,8 +135,16 @@ class AuthService:
         structured(logger, logging.INFO, "user registered", user_id=user.id, username=username)
         return user
 
-    async def login(self, db: AsyncSession, *, username: str, password: str) -> LoginResult:
-        """Authenticate a user and issue an access token."""
+    async def login(
+        self,
+        db: AsyncSession,
+        *,
+        username: str,
+        password: str,
+        sms: SmsService,
+        otp: OtpService,
+    ) -> LoginResult | OtpChallengeResult:
+        """Authenticate a user, or start the second step when 2FA is enabled."""
         if self._attempts.is_locked(username):
             raise RateLimitError("Too many failed login attempts; try again later")
         user = await UserRepository(db).get_by_username(username)
@@ -133,8 +159,58 @@ class AuthService:
             structured(logger, logging.WARNING, "login rejected: account disabled", user_id=user.id)
             raise ForbiddenError("Account is disabled")
         self._attempts.reset(username)
+        if user.otp_enabled == 1:
+            # No token, no last_login_at, no commit: the password was right, but
+            # nothing is authenticated until the code is verified.
+            return await self._start_otp_login(user, sms=sms, otp=otp)
         user.last_login_at = utcnow()
         await db.commit()
         token, expires_in = self._tokens.create_access_token(user.id)
         structured(logger, logging.INFO, "login succeeded", user_id=user.id)
         return LoginResult(user=user, access_token=token, expires_in_minutes=expires_in)
+
+    async def complete_otp_login(
+        self, db: AsyncSession, *, challenge_id: str, code: str, otp: OtpService
+    ) -> LoginResult:
+        """Second step of a two-step login: consume the code, then issue the token."""
+        verified = otp.verify(challenge_id=challenge_id, code=code, purpose="login")
+        user = await UserRepository(db).get_by_id(verified.user_id)
+        if user is None or user.status != ACTIVE_STATUS:
+            raise ForbiddenError("Account is disabled")
+        if user.otp_enabled != 1:
+            # Two-step verification was turned off between the two steps.
+            raise BadRequestError("Two-step verification is no longer enabled")
+        user.last_login_at = utcnow()
+        await db.commit()
+        token, expires_in = self._tokens.create_access_token(user.id)
+        structured(logger, logging.INFO, "login succeeded", user_id=user.id, second_factor=True)
+        return LoginResult(user=user, access_token=token, expires_in_minutes=expires_in)
+
+    async def _start_otp_login(
+        self, user: User, *, sms: SmsService, otp: OtpService
+    ) -> OtpChallengeResult:
+        """Send the login code, or fail closed if the account is inconsistent."""
+        if not user.mobile_number:
+            # Reachable only by editing the database, but it must not fall through
+            # to a password-only login — that would silently drop the second factor.
+            structured(
+                logger, logging.ERROR, "otp enabled without a mobile number", user_id=user.id
+            )
+            raise ServiceUnavailableError("Two-step verification is unavailable for this account")
+        challenge_id, code = otp.issue(user_id=user.id, purpose="login")
+        try:
+            await sms.send_verify_code(
+                mobile=f"{user.mobile_number:010d}",
+                code=code,
+                display_name=user.display_name,
+                username=user.username,
+                user_id=user.id,
+            )
+        except ServiceUnavailableError:
+            # Let the user retry immediately when the provider is the problem.
+            otp.discard(challenge_id, user_id=user.id)
+            raise
+        return OtpChallengeResult(
+            challenge_id=challenge_id,
+            expires_in_seconds=self._settings.otp_code_ttl_seconds,
+        )
