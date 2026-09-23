@@ -47,4 +47,5 @@ async def update_me(
         username=body.username,
         display_name=body.display_name,
         default_model_id=body.default_model_id,
+        preferred_otp_method=body.preferred_otp_method,
     )

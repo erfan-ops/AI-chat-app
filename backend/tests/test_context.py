@@ -358,6 +358,20 @@ def test_build_context_always_explains_message_format() -> None:
     assert '"reply_to_id"' in MESSAGE_FORMAT_HINT
 
 
+def test_reply_targeting_is_taught_as_the_exception() -> None:
+    """Quoting is opt-in: the example must not teach a targeted direct answer.
+
+    The hint's own example is what models copy, so an example whose ordinary reply
+    carries an id makes every reply a quote.
+    """
+    hint = " ".join(MESSAGE_FORMAT_HINT.split())
+    assert (
+        'the ordinary answer is {"content": "I\'m great, thank you!", "reply_to_id": null}' in hint
+    )
+    assert "Never set it to the id of the newest message" in hint
+    assert '"reply_to_id": 7}' in hint  # the targeted case is still demonstrated
+
+
 # -- Streamed-content extraction ---------------------------------------------------
 
 

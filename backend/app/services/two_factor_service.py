@@ -1,8 +1,12 @@
-"""Two-step verification settings: verify a mobile number, then turn it on or off.
+"""Two-step verification settings: verify a contact, then turn the factor on or off.
 
-The number is stored (``USERS.MOBILE_NUMBER``) and the flag flipped
-(``USERS.OTP_ENABLED``) only after the code sent to that number comes back — SMS.ir
-accepting a request is not verification.
+A destination is stored (``USERS.MOBILE_NUMBER`` or ``USERS.EMAIL``) and the flag
+flipped (``USERS.OTP_ENABLED``) only after the code sent to it comes back — a
+provider accepting a request is not verification.
+
+A user may verify *both* contacts. Whichever one is verified first becomes the
+default method; verifying the second one later leaves that default alone, so
+adding an email never quietly moves where login codes go.
 """
 
 from __future__ import annotations
@@ -12,13 +16,15 @@ from dataclasses import dataclass
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.contact import OtpMethod, mask_destination
 from app.core.logging import get_logger, structured
 from app.core.time import utcnow
 from app.db.models.user import User
 from app.db.repositories.users import UserRepository
 from app.exceptions import ConflictError, NotFoundError, ServiceUnavailableError
+from app.services.otp_audit import OtpAudit
+from app.services.otp_delivery import Destination, OtpDeliveryService
 from app.services.otp_service import OtpService
-from app.services.sms_service import SmsService
 
 logger = get_logger("app.services.two_factor")
 
@@ -29,73 +35,112 @@ class ChallengeIssued:
 
     challenge_id: str
     expires_in_seconds: int
-    mobile_hint: str
-
-
-def mask_mobile(mobile: str) -> str:
-    """``9123456789`` → ``+98 912 *** 6789`` — enough to recognise, not to harvest."""
-    return f"+98 {mobile[:3]} *** {mobile[6:]}"
+    method: OtpMethod
+    destination_hint: str
 
 
 class TwoFactorService:
     """Enabling/disabling two-step verification for the authenticated user."""
 
     async def start_enable(
-        self, *, user: User, mobile: str, sms: SmsService, otp: OtpService
+        self,
+        *,
+        user: User,
+        method: OtpMethod,
+        destination: str,
+        delivery: OtpDeliveryService,
+        otp: OtpService,
+        audit: OtpAudit,
     ) -> ChallengeIssued:
-        """Send a code to ``mobile``; nothing is stored until it is verified."""
-        existing = f"{user.mobile_number:010d}" if user.mobile_number else None
-        if user.otp_enabled == 1 and existing == mobile:
-            raise ConflictError("Two-step verification is already enabled for this number")
+        """Send a code to ``destination``; nothing is stored until it is verified."""
+        if user.otp_enabled == 1 and delivery.destination_for(user, method) == destination:
+            raise ConflictError("Two-step verification is already enabled for this destination")
 
-        challenge_id, code = otp.issue(user_id=user.id, purpose="enable", mobile=mobile)
+        challenge_id, code = otp.claim(
+            user_id=user.id, purpose="verify_contact", method=method, destination=destination
+        )
         try:
-            await sms.send_verify_code(
-                mobile=mobile,
+            # The destination is the one just supplied (it is being verified, so it
+            # is not on the account yet) — resolve() would look for a stored one.
+            await delivery.send(
+                Destination(method=method, address=destination),
                 code=code,
-                display_name=user.display_name,
-                username=user.username,
-                user_id=user.id,
+                user=user,
+                purpose="verify_contact",
             )
         except ServiceUnavailableError:
             # Nothing was sent, so let the user try again immediately.
             otp.discard(challenge_id, user_id=user.id)
             raise
+        otp.commit(challenge_id)
+        # The code is on its way, so it belongs in the history.
+        await audit.issued(
+            challenge=otp.require_live(challenge_id, purpose="verify_contact"),
+            method=method,
+            ttl_seconds=otp.code_ttl_seconds,
+        )
         return ChallengeIssued(
             challenge_id=challenge_id,
             expires_in_seconds=otp.code_ttl_seconds,
-            mobile_hint=mask_mobile(mobile),
+            method=method,
+            destination_hint=mask_destination(method, destination),
         )
 
     async def confirm_enable(
-        self, db: AsyncSession, *, user_id: int, challenge_id: str, code: str, otp: OtpService
+        self,
+        db: AsyncSession,
+        *,
+        user_id: int,
+        challenge_id: str,
+        code: str,
+        otp: OtpService,
+        audit: OtpAudit,
     ) -> User:
-        """Verify the code, then store the number and enable the second factor."""
+        """Verify the code, then store the destination and enable the second factor."""
         # Consumes the challenge; a failure leaves the account untouched.
         verified = otp.verify(
             challenge_id=challenge_id,
             code=code,
-            purpose="enable",
+            purpose="verify_contact",
             expected_user_id=user_id,
         )
-        if verified.mobile is None:
+        if verified.destination is None:
             raise ServiceUnavailableError("Two-step verification is unavailable for this account")
         user = await UserRepository(db).get_by_id(verified.user_id)
         if user is None:
             raise NotFoundError("User not found")
 
-        # The number comes from the verified challenge, never from a second
+        first_time = user.otp_enabled != 1
+        # The destination comes from the verified challenge, never from a second
         # client-supplied value, so it cannot be swapped between the two calls.
-        user.mobile_number = int(verified.mobile)
+        if verified.method == "EMAIL":
+            user.email = verified.destination
+        else:
+            user.mobile_number = int(verified.destination)
         user.otp_enabled = 1
+        if first_time:
+            # Enabling 2FA must leave the account usable: the default method has to
+            # be the contact that was just verified, or the next login would look
+            # for a destination that does not exist yet.
+            user.preferred_otp_method = verified.method
         user.updated_at = utcnow()
         await db.commit()
         await db.refresh(user)
-        structured(logger, logging.INFO, "two-step verification enabled", user_id=user.id)
+        structured(
+            logger,
+            logging.INFO,
+            "two-step verification enabled",
+            user_id=user.id,
+            method=verified.method,
+            first_time=first_time,
+        )
+        # After the commit: the account change is what matters, the history is a record
+        # of it.
+        await audit.consumed(user_id=user.id, purpose="verify_contact")
         return user
 
     async def disable(self, db: AsyncSession, *, user_id: int, otp: OtpService) -> User:
-        """Turn the second factor off. The verified number is kept."""
+        """Turn the second factor off. Verified destinations are kept."""
         user = await UserRepository(db).get_by_id(user_id)
         if user is None:
             raise NotFoundError("User not found")

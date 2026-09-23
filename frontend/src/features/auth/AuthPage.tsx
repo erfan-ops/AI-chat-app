@@ -1,13 +1,14 @@
 import { useState } from 'react'
 import type { FormEvent } from 'react'
 import { useMutation } from '@tanstack/react-query'
-import { login, loginWithOtp, register } from '../../api/auth'
+import { login, loginWithOtp, register, switchOtpMethod } from '../../api/auth'
 import { setSession } from '../../session/authSession'
 import { ApiError } from '../../api/client'
 import { errorMessage } from '../../utils/errors'
 import { ChatBubbleIcon, SparklesIcon } from '../../components/Icons'
 import { Spinner } from '../../components/Spinner'
-import type { OtpRequiredResponse } from '../../types/api'
+import { otpMethodLabel, parseOtpMethod } from '../../utils/otpMethod'
+import type { OtpMethod, OtpRequiredResponse } from '../../types/api'
 import styles from './AuthPage.module.css'
 
 type Mode = 'login' | 'register'
@@ -71,11 +72,22 @@ export function AuthPage() {
     },
   })
 
+  const switchDelivery = useMutation({
+    mutationFn: (method: OtpMethod) =>
+      switchOtpMethod({ challenge_id: challenge?.challenge_id ?? '', method }),
+    onSuccess: (response) => {
+      // A whole new challenge: the previous code is dead, so let it go.
+      setChallenge(response)
+      setCode('')
+    },
+    onError: (err) => setError(errorMessage(err)),
+  })
+
   function handleVerify(event: FormEvent) {
     event.preventDefault()
     setError(null)
     if (code.length !== 6) {
-      setError('Enter the 6-digit code from the SMS.')
+      setError('Enter the 6-digit code.')
       return
     }
     verify.mutate()
@@ -165,8 +177,8 @@ export function AuthPage() {
               )}
 
               <p className={styles.otpHint}>
-                We sent a 6-digit code by SMS. It expires in{' '}
-                {Math.round(challenge.code_expires_in_seconds / 60)} minutes.
+                We sent a 6-digit code by {otpMethodLabel(challenge.delivery_method)}. It
+                expires in {Math.round(challenge.code_expires_in_seconds / 60)} minutes.
               </p>
 
               <div className={styles.field}>
@@ -182,13 +194,17 @@ export function AuthPage() {
                   maxLength={6}
                   value={code}
                   onChange={(event) => setCode(event.target.value.replace(NON_DIGITS, ''))}
-                  disabled={verify.isPending}
+                  disabled={verify.isPending || switchDelivery.isPending}
                   autoFocus
                   required
                 />
               </div>
 
-              <button type="submit" className={styles.submit} disabled={verify.isPending}>
+              <button
+                type="submit"
+                className={styles.submit}
+                disabled={verify.isPending || switchDelivery.isPending}
+              >
                 {verify.isPending ? (
                   <>
                     <Spinner size={16} label="Verifying code" />
@@ -198,6 +214,29 @@ export function AuthPage() {
                   'Verify and sign in'
                 )}
               </button>
+
+              {/* Offered only when the account has a usable second contact, so this
+                  can never lead to a dead end. The saved default is unaffected. */}
+              {challenge.alternative_method && (
+                <button
+                  type="button"
+                  className={styles.otpSwitch}
+                  onClick={() => {
+                    setError(null)
+                    switchDelivery.mutate(parseOtpMethod(challenge.alternative_method))
+                  }}
+                  disabled={verify.isPending || switchDelivery.isPending}
+                >
+                  {switchDelivery.isPending ? (
+                    <>
+                      <Spinner size={15} label="Sending code" />
+                      Sending…
+                    </>
+                  ) : (
+                    `Send the code by ${otpMethodLabel(challenge.alternative_method)} instead`
+                  )}
+                </button>
+              )}
 
               <button type="button" className={styles.backToSignIn} onClick={cancelChallenge}>
                 Back to sign in

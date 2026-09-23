@@ -19,6 +19,9 @@ from app.exceptions import ForbiddenError, UnauthorizedError
 from app.services.ai_service import AIService, ProviderFactory
 from app.services.auth_service import AuthService
 from app.services.cloudinary_service import CloudinaryService
+from app.services.email_service import EmailService
+from app.services.otp_audit import OtpAudit
+from app.services.otp_delivery import OtpDeliveryService
 from app.services.otp_service import OtpService
 from app.services.sms_service import SmsService
 
@@ -56,6 +59,34 @@ def get_sms_service(settings: Annotated[Settings, Depends(get_settings)]) -> Sms
     dependency.
     """
     return SmsService(settings)
+
+
+@lru_cache
+def get_email_service(settings: Annotated[Settings, Depends(get_settings)]) -> EmailService:
+    """Overridable in tests, so no test can reach the real email provider.
+
+    The ``Depends`` on ``settings`` matters here for the same reason as above.
+    """
+    return EmailService(settings)
+
+
+def get_otp_audit(
+    session_factory: Annotated[async_sessionmaker[AsyncSession], Depends(get_session_factory)],
+) -> OtpAudit:
+    """OTP history writer. Deliberately not session-scoped: see app/services/otp_audit.py."""
+    return OtpAudit(session_factory)
+
+
+def get_otp_delivery_service(
+    sms: Annotated[SmsService, Depends(get_sms_service)],
+    email: Annotated[EmailService, Depends(get_email_service)],
+) -> OtpDeliveryService:
+    """Composes the two providers; overrides of either one are respected.
+
+    Deliberately not cached: it holds no state, and a cache would have to be keyed
+    on the (possibly overridden) services it is built from.
+    """
+    return OtpDeliveryService(sms, email)
 
 
 @lru_cache

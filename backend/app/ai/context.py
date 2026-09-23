@@ -65,13 +65,20 @@ MESSAGE_FORMAT_HINT = (
     'e.g. "2026-09-21T14:05:00Z" — use it to tell how much time passed between '
     "messages. The content field holds the actual message text — reply to it "
     "naturally, never quote or imitate the JSON wrapper.\n"
-    "REPLY TARGETING. Set reply_to_id to the id of the specific message you are "
-    "answering (the ids appear in the history above). Do this when the user refers to "
-    "an earlier message by content, or asks you to reply to one; otherwise set it to "
-    'null. Example: for the incoming message {"id": 12, "role": "user", '
-    '"content": "How are you?", "created_at": "2026-09-21T14:05:00Z", '
-    '"reply_to_id": null}, a direct answer would be '
-    '{"content": "I\'m great, thank you!", "reply_to_id": 12}.\n'
+    "REPLY TARGETING. Answering the newest message is the ordinary case and needs no "
+    'reference at all: reply with "reply_to_id": null. That is the default — most '
+    "replies have no target. Only set reply_to_id to one of the ids in the history "
+    "above when you are deliberately aiming this reply at an EARLIER message rather "
+    "than at the newest one: the user asks you to answer or comment on something they "
+    "said several messages ago, or you go back to a point the conversation has already "
+    "moved past. Never set it to the id of the newest message — answering it is an "
+    "ordinary reply, not a targeted one. Example: for the incoming message "
+    '{"id": 12, "role": "user", "content": "How are you?", '
+    '"created_at": "2026-09-21T14:05:00Z", "reply_to_id": null}, the ordinary answer '
+    'is {"content": "I\'m great, thank you!", "reply_to_id": null}, while answering '
+    "their earlier message with id 7 would be "
+    '{"content": "Back to what you asked before — yes, I do remember.", '
+    '"reply_to_id": 7}.\n'
     'JSON VALIDITY RULES. Escape double quotes inside your text as \\" and newlines '
     "as \\n; do not use trailing commas or comments. Output nothing but the JSON object."
 )

@@ -39,6 +39,7 @@ from app.db.models import (
     Memory,
     Message,
     MessageGeneration,
+    OtpLog,
     Provider,
     User,
 )
@@ -53,6 +54,7 @@ MODELS: list[type] = [
     Memory,
     Message,
     MessageGeneration,
+    OtpLog,
     User,
 ]
 
@@ -80,8 +82,8 @@ async def verify_orm_schema() -> None:
         for table_name, column_name in result:
             oracle_columns.setdefault(table_name, []).append(column_name)
 
-        # All 9 tables must exist in Oracle and be mapped by the ORM.
-        check(len(oracle_columns) >= 9, f"Oracle has 9 tables (found {len(oracle_columns)})")
+        # Every table the application maps must exist in Oracle.
+        check(len(oracle_columns) >= 11, f"Oracle has 11 tables (found {len(oracle_columns)})")
         for model in MODELS:
             mapped = [c.name.lower() for c in model.__table__.columns]
             actual = oracle_columns.get(model.__tablename__, [])

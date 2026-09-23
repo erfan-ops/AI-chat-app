@@ -1,7 +1,7 @@
 # AI Chat API
 
 A production-quality **FastAPI backend for the AI chat application**, built
-around the **existing Oracle database schema** (9 tables). The schema is the source of
+around the **existing Oracle database schema** (11 tables). The schema is the source of
 truth — the application adapts to it, never the other way around.
 
 Key features:
@@ -42,7 +42,7 @@ Key features:
                                ▼                ▼
                       ┌────────────────┐   ┌──────────────┐
                       │  Oracle DB     │   │  AI Provider │
-                      │  (9 tables,    │   │  (DeepSeek   │
+                      │  (11 tables,   │   │  (DeepSeek   │
                       │   untouched)   │   │   etc.)      │
                       └────────────────┘   └──────────────┘
 ```
@@ -153,6 +153,15 @@ Copy `.env.example` to `.env` and fill in real values (never commit `.env`):
 | `AI_TEMPERATURE` / `AI_MAX_TOKENS` | `0.8` / `1024` | Generation parameters |
 | `AI_STREAM_TIMEOUT_SECONDS` | `120` | Provider read timeout |
 | `CLOUDINARY_CLOUD_NAME` / `CLOUDINARY_API_KEY` / `CLOUDINARY_API_SECRET` | *(empty)* | Cloudinary credentials for signed avatar uploads. The secret stays server-side; unset disables the feature (`POST /cloudinary/signature` → 503) |
+| `SMS_IR_API_KEY` | *(empty)* | SMS.ir API key for two-step codes. Unset disables the SMS channel (`503 SMS is not configured`) |
+| `SMS_IR_TEMPLATE_ID` | `601570` | SMS.ir "send verify code" template; its parameters are `USERNAME` and `CODE` |
+| `SMS_IR_BASE_URL` / `SMS_IR_TIMEOUT_SECONDS` | `https://api.sms.ir` / `10` | Provider endpoint (overridable for a local stub) and request timeout |
+| `RESEND_API_KEY` | *(empty)* | Resend API key for two-step codes sent by email. Unset disables the email channel (`503 Email is not configured`) |
+| `RESEND_FROM_EMAIL` | `AI-chat@mail.erfancodes.ir` | Sender address; its domain must be verified in Resend |
+| `RESEND_ACTIVATION_SUBJECT` | `Confirm your email address` | Subject for the code that confirms a new address. The bodies of both emails are the templates in `app/services/email_service.py` |
+| `RESEND_OTP_SUBJECT` / `RESEND_TIMEOUT_SECONDS` | `Your AI Chat verification code` / `10` | Subject line and request timeout |
+| `OTP_CODE_TTL_SECONDS` / `OTP_RESEND_COOLDOWN_SECONDS` | `120` / `60` | Code lifetime and minimum gap between two codes for one user (per delivery method) |
+| `OTP_MAX_VERIFY_ATTEMPTS` / `OTP_MAX_SENDS_PER_DAY` | `5` / `10` | Wrong guesses allowed per code, and the daily send cap per user (across methods) |
 
 ## Installation & running
 
@@ -203,13 +212,46 @@ uv run ty check app
 - **Administrators** (`USERS.ROLE = 'ROLE_admin'`, set only in the database) get full CRUD
   over characters and models through the same paths — see *Roles* below.
 
+### Two-step verification (one-time codes)
+
+A second factor is delivered as a one-time code, by **SMS** or by **email** — the same
+generation, expiry, attempt and rate-limit logic either way; only the provider differs
+(`app/services/otp_delivery.py` is the single place that picks one).
+
+- **Enabling** is two calls: `POST /me/otp/enable` sends a code to a mobile number or an
+  email address, and `POST /me/otp/verify` confirms it. Only then is the destination
+  stored (`USERS.MOBILE_NUMBER` / `USERS.EMAIL`) and `USERS.OTP_ENABLED` set. Verifying a
+  *first* contact also makes it the default method; verifying a second one later does not
+  move it.
+- **Logging in** with two-step on returns `otp_required` + `challenge_id`, the
+  `delivery_method` used, and `alternative_method` when the other channel is usable.
+  `POST /auth/login/otp/method` re-sends to that other channel **for this login only** —
+  the saved default (`PATCH /me {preferred_otp_method}`) is never changed by it.
+- **Privacy**: the login challenge names the channel but never the destination — someone
+  holding the password must not learn the phone suffix or the address. The settings flow
+  shows a masked destination (`+98 912 *** 6789`, `al***@example.com`) because the caller
+  just typed it.
+- **Fail closed**: if the default channel has no verified destination, login answers
+  `503` rather than silently using the other one or dropping to password-only. A
+  configured-but-unusable provider (no API key) is also a `503`, never a silent skip.
+- Codes are 6 digits, stored only as an HMAC, single-use, valid for
+  `OTP_CODE_TTL_SECONDS`, and dropped after `OTP_MAX_VERIFY_ATTEMPTS` wrong guesses.
+  Rejections are **400, never 401** — the client signs out on an authenticated 401. The
+  cooldown is per delivery method (so switching channels is immediate) while the daily
+  send cap is per user (so switching buys no extra sends). The challenge store is
+  in-process: **single worker or sticky sessions** — see `docs/otp-2fa-notes.md`.
+
 ## API overview
 
 | Method & path | Description |
 |---|---|
 | `POST /auth/register` | Create account (public) |
-| `POST /auth/login` | Get JWT access token (public) |
-| `GET /me` · `PATCH /me` | Profile; update username / display name / default model (a taken username is `409`) |
+| `POST /auth/login` | Get JWT access token (public); with two-step on, returns `otp_required` + a `challenge_id` instead |
+| `POST /auth/login/otp` | Complete a two-step login with the code (public) |
+| `POST /auth/login/otp/method` | Send this login's code through the other channel instead (public) |
+| `GET /me` · `PATCH /me` | Profile; update username / display name / default model / `preferred_otp_method` (a taken username is `409`) |
+| `POST /me/otp/enable` · `/me/otp/verify` | Verify a mobile number or email address, then turn two-step on |
+| `POST /me/otp/disable` | Turn two-step off; verified contacts are kept |
 | `GET /characters` | Active AI characters: built-in + the user's own — the same scope for administrators |
 | `GET /characters/{id}` | One character (admin: any owner or status) |
 | `POST /characters` | Create a private character owned by the caller |
@@ -307,6 +349,13 @@ For each generation the app builds the model context from persisted data
    capped at `AI_CONTEXT_MAX_MESSAGES`; the newest message is never dropped. The walk is
    backwards/truncation-friendly, so summarization or smarter budgeting can be added
    without touching the rest of the service.
+5. **Reply contract**: history is enveloped as JSON (`id`, `role`, `content`,
+   `created_at`, `reply_to_id`) and the model must answer with
+   `{"content": ..., "reply_to_id": ...}`. `reply_to_id` is **null by default** —
+   answering the newest message is an ordinary reply and carries no quote. The model
+   sets it only when it deliberately targets an *earlier* message (typically because the
+   user asked about something said several messages back); an id that does not resolve
+   in the conversation is downgraded to null when the reply is persisted.
 
 ### Configuring the AI provider
 

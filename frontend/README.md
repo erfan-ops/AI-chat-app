@@ -81,15 +81,18 @@ src/
   components/              # shared UI: Avatar, Modal, Spinner, EmptyState, ErrorState,
                            #   ToastHost (+ toastStore), inline SVG icon set
   features/
-    auth/AuthPage          # sign-in / account creation, plus the SMS-code step for
-                           #   accounts with two-step verification enabled
+    auth/AuthPage          # sign-in / account creation, plus the code step for accounts
+                           #   with two-step verification (and the switch to the other
+                           #   delivery method)
     conversations/         # sidebar, list items (rename/delete), infinite list query
     characters/            # cached character lookup (avatars), create + profile dialogs,
                            #   avatar picker (crop → upload to Cloudinary)
     models/                # shared ['models'] query (picker + settings)
-    settings/SettingsModal # profile (username, display name, default model) + two-step verification
+    settings/SettingsModal # profile (username, display name, default model), theme,
+                           #   two-step verification (SMS or email, default method)
     personas/              # user personas: cached list + create-persona form modal
-    newConversation/       # character + model picker modal (+ optional persona picker)
+    newConversation/       # step-by-step new-chat wizard: character → model → persona,
+                           #   with a clickable stepper (one step's UI at a time)
     chat/                  # ChatView, MessageList, MessageComposer,
                            #   useSendMessage (SSE), useMessages (before_id paging),
                            #   useMessageGestures (tap/hold menu, swipe to reply),
@@ -111,9 +114,13 @@ its family at the front of the `body` stack.
 
 ## API integration notes
 
-- **Auth**: all endpoints except `/auth/register`, `/auth/login` and
-  `/auth/login/otp` need a JWT Bearer token. The client attaches it automatically;
-  a `401` clears the local session and returns the user to the sign-in screen, and
+- **Auth**: all endpoints except `/auth/register`, `/auth/login`, `/auth/login/otp` and
+  `/auth/login/otp/method` need a JWT Bearer token. The client attaches it automatically.
+  `AppShell` also refreshes the profile once on load (`GET /me`), because the session —
+  and the user object inside it — is persisted in localStorage and can outlive a deploy
+  that adds a field to it; until that refresh lands, a value the UI cannot interpret is
+  read the way the API reads it rather than treated as a crash (see `utils/otpMethod.ts`).
+  A `401` clears the local session and returns the user to the sign-in screen, and
   token expiry follows the API's `expires_in` (minutes). When the account has
   two-step verification on, `POST /auth/login` returns `otp_required` + a
   `challenge_id` instead of a token, the sign-in screen switches to a code prompt,
@@ -127,11 +134,20 @@ its family at the front of the `body` stack.
   the dialog reports inline (it is never a 401, so the user is not signed out). A
   successful rename updates the cached session, so the sidebar footer reflects it
   immediately — and since the token carries the user id, the session survives it.
-  Enabling 2FA sends a code to a mobile number entered as 10 digits after a fixed
-  `+98` prefix (the stored value is the canonical local number, never the formatted
-  one), and the flag only turns on once that code is verified. `/me/otp/*` rejections
-  are 400-level for the same reason as above, and a successful change updates the
-  cached session via `updateSessionUser` so the sidebar reflects it without a reload.
+  Enabling 2FA sends a code to a **mobile number** (10 digits after a fixed `+98` prefix;
+  the stored value is the canonical local number, never the formatted one) or an **email
+  address**, and the flag only turns on once that code is verified. Verifying the first
+  contact makes it the default delivery method; verifying the other one later adds it
+  without moving the default, and only then does the "Send codes to" selector appear
+  (`PATCH /me {preferred_otp_method}`). `/me/otp/*` rejections are 400-level for the same
+  reason as above, and a successful change updates the cached session via
+  `updateSessionUser` so the sidebar reflects it without a reload.
+- **Choosing where a login code goes**: `POST /auth/login` names the channel
+  (`delivery_method`) and, when the account has a usable second contact, offers
+  `alternative_method` — the sign-in screen then shows "Send the code by text message /
+  email instead", calling `/auth/login/otp/method`. That choice lasts for that login
+  only and never changes the saved default; the response carries no address or number,
+  only which channel was used.
 - **Theme**: light/dark/system is a per-browser preference in `theme/themeStore.ts`,
   applied as `data-theme` on `<html>` — which is what `styles/tokens.css` keys the
   dark palette off. A pre-paint script in `index.html` applies it before the first
@@ -151,6 +167,16 @@ its family at the front of the `body` stack.
   scrolling to the top, with scroll anchoring).
 - **Timestamps**: the backend stores naive-UTC `TIMESTAMP` values and serializes them
   without a zone suffix, so all dates are parsed as UTC (`utils/dates.ts`).
+- **New chat wizard**: `features/newConversation` walks character → model → persona one
+  step at a time, reusing the same selection UI (and the same `useCharacters` /
+  `useModels` / `usePersonas` queries) it always had. The stepper at the top is the
+  navigation: it marks the current step (`aria-current="step"`), shows what each step has
+  chosen so far, and jumps straight to any step. The character is the only required
+  selection, so the later steps stay disabled until one is picked; the model is
+  preselected (the user's default when active, else the first) and a persona is optional
+  ("No persona"), which is why revisiting a step never invalidates another — the three
+  selections are independent, and the primary action ("Start chatting") appears only on
+  the last step.
 
 ## Assumptions & limitations
 

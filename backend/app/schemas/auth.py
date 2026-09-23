@@ -6,6 +6,7 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from app.core.contact import OtpMethod
 from app.schemas.users import USERNAME_MAX_LENGTH, USERNAME_MIN_LENGTH, USERNAME_PATTERN, UserRead
 
 
@@ -42,14 +43,21 @@ class LoginResponse(BaseModel):
 class OtpRequiredResponse(BaseModel):
     """The password was correct, but two-step verification is enabled.
 
-    No token is issued yet, and deliberately no hint about which number the code
-    went to: that would disclose the phone suffix to anyone holding the password,
-    which is exactly what the second factor protects against.
+    No token is issued yet, and deliberately no hint about *where* the code went:
+    naming the contact would disclose the phone suffix or the address to anyone
+    holding the password, which is exactly what the second factor protects against.
+    The channel is disclosed because the client cannot describe the next step
+    without it, and it is the weaker of the two facts.
     """
 
     otp_required: Literal[True] = True
     challenge_id: str
     code_expires_in_seconds: int = Field(description="Lifetime of the code, in seconds")
+    delivery_method: OtpMethod = Field(description="Channel the code was sent through")
+    alternative_method: OtpMethod | None = Field(
+        default=None,
+        description="The other usable channel, if any — absent when there is none",
+    )
 
 
 class LoginOtpRequest(BaseModel):
@@ -57,3 +65,14 @@ class LoginOtpRequest(BaseModel):
 
     challenge_id: str = Field(min_length=16, max_length=128)
     code: str = Field(min_length=6, max_length=6, pattern=r"[0-9]{6}")
+
+
+class LoginOtpMethodRequest(BaseModel):
+    """Body for POST /auth/login/otp/method — resend this login's code elsewhere.
+
+    Only the channel is named: the destination always comes from the account, so a
+    caller can never redirect a code to an address of their choosing.
+    """
+
+    challenge_id: str = Field(min_length=16, max_length=128)
+    method: OtpMethod

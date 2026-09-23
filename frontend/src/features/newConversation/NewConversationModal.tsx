@@ -13,7 +13,14 @@ import { ErrorState } from '../../components/ErrorState'
 import { Spinner } from '../../components/Spinner'
 import { pushToast } from '../../components/toastStore'
 import { errorMessage } from '../../utils/errors'
-import { CheckIcon, PlusIcon, SparklesIcon, UserIcon } from '../../components/Icons'
+import {
+  CheckIcon,
+  ChevronLeftIcon,
+  ChevronRightIcon,
+  PlusIcon,
+  SparklesIcon,
+  UserIcon,
+} from '../../components/Icons'
 import type { AIModel, Character, Persona } from '../../types/api'
 import styles from './NewConversationModal.module.css'
 
@@ -28,12 +35,25 @@ const EMPTY_CHARACTERS: Character[] = []
 const EMPTY_MODELS: AIModel[] = []
 const EMPTY_PERSONAS: Persona[] = []
 
+/** The wizard's steps, in order. */
+const STEPS = [
+  { key: 'character', label: 'Character' },
+  { key: 'model', label: 'Model' },
+  { key: 'persona', label: 'Persona' },
+] as const
+
+const LAST_STEP = STEPS.length - 1
+
 /**
- * Character + model selection for a new conversation. Both lists come from
- * the API — nothing is hardcoded. The model is preselected from the user's
- * default (when active), otherwise the first active model; the user can
- * override it. Form state starts fresh each open: the parent remounts this
- * component with a new `key` whenever the modal opens.
+ * New-conversation wizard: character → model → persona, one step at a time.
+ *
+ * All three lists come from the API — nothing is hardcoded. The model is
+ * preselected from the user's default (when active), otherwise the first active
+ * model; a persona is optional and defaults to "No persona". Every step is
+ * reachable once the character is chosen, and revisiting a step never disturbs
+ * the other selections (they are independent — no selection constrains another).
+ * Form state starts fresh each open: the parent remounts this component with a
+ * new `key` whenever the modal opens.
  */
 export function NewConversationModal({ open, onClose, onCreated }: NewConversationModalProps) {
   const charactersQuery = useCharacters()
@@ -49,6 +69,7 @@ export function NewConversationModal({ open, onClose, onCreated }: NewConversati
   const [title, setTitle] = useState('')
   const [personaFormOpen, setPersonaFormOpen] = useState(false)
   const [characterFormOpen, setCharacterFormOpen] = useState(false)
+  const [stepIndex, setStepIndex] = useState(0)
 
   const characters = charactersQuery.data ?? EMPTY_CHARACTERS
   const models = modelsQuery.data ?? EMPTY_MODELS
@@ -66,9 +87,34 @@ export function NewConversationModal({ open, onClose, onCreated }: NewConversati
   const effectiveModelId = modelId ?? preselectedModelId
 
   const selectedCharacter = characters.find((character) => character.id === characterId)
+  const selectedModel = models.find((model) => model.id === effectiveModelId)
+  const selectedPersona = personas.find((persona) => persona.id === personaId)
 
   const busy = create.isPending
   const canCreate = characterId !== null && !busy
+
+  // The character is the only required selection, so it is what gates the steps
+  // after it. Everything before a step is already answered by the time it opens.
+  function canOpenStep(index: number): boolean {
+    return index === 0 || characterId !== null
+  }
+
+  /** What each step has chosen so far — shown in the stepper, null while unset. */
+  const stepValues: (string | null)[] = [
+    selectedCharacter?.name ?? null,
+    selectedModel ? (selectedModel.display_name ?? selectedModel.model_name) : null,
+    // "No persona" is a real answer, not a missing one.
+    personaId === null ? 'No persona' : (selectedPersona?.name ?? 'No persona'),
+  ]
+
+  function goToStep(index: number) {
+    if (index === stepIndex || !canOpenStep(index)) return
+    setStepIndex(index)
+  }
+
+  const isLastStep = stepIndex === LAST_STEP
+  // The model step can always continue: with no model the server uses its default.
+  const canContinue = stepIndex === 0 ? characterId !== null : true
 
   function handleCreate() {
     if (characterId === null) return
@@ -94,261 +140,391 @@ export function NewConversationModal({ open, onClose, onCreated }: NewConversati
   return (
     <>
       <Modal open={open} onClose={onClose} title="New chat" size="lg">
-      <div className={styles.layout}>
-        <section className={styles.section} aria-labelledby="nc-characters">
-          <h3 id="nc-characters" className={styles.sectionTitle}>
-            Who do you want to talk to?
-          </h3>
-
-          {charactersQuery.isPending && (
-            <div className={styles.loading}>
-              <Spinner size={22} label="Loading characters" />
-            </div>
-          )}
-
-          {charactersQuery.isError && (
-            <ErrorState
-              error={charactersQuery.error}
-              onRetry={() => {
-                void charactersQuery.refetch()
-              }}
-            />
-          )}
-
-          {charactersQuery.isSuccess && characters.length === 0 && (
-            <EmptyState
-              icon={<UserIcon aria-hidden="true" />}
-              title="No characters available"
-              hint="Create the first one below to get started."
-            />
-          )}
-
-          {characters.length > 0 && (
-            <div className={styles.characterGrid} role="radiogroup" aria-label="Character">
-              {characters.map((character) => {
-                const selected = character.id === characterId
-                return (
-                  <button
-                    key={character.id}
-                    type="button"
-                    role="radio"
-                    aria-checked={selected}
-                    className={`${styles.characterCard} ${selected ? styles.characterCardSelected : ''}`}
-                    onClick={() => setCharacterId(character.id)}
+        <ol className={styles.stepper} aria-label="New chat steps">
+          {STEPS.map((step, index) => {
+            const current = index === stepIndex
+            const done = canOpenStep(index) && stepValues[index] !== null
+            return (
+              <li key={step.key}>
+                <button
+                  type="button"
+                  className={`${styles.step} ${current ? styles.stepCurrent : ''}`}
+                  aria-current={current ? 'step' : undefined}
+                  disabled={!canOpenStep(index)}
+                  onClick={() => goToStep(index)}
+                >
+                  <span
+                    className={`${styles.stepBadge} ${done ? styles.stepBadgeDone : ''}`}
+                    aria-hidden="true"
                   >
-                    <Avatar name={character.name} src={character.avatar_url} size={52} />
-                    <span className={styles.characterName}>{character.name}</span>
-                    {selected && (
-                      <span className={styles.characterCheck} aria-hidden="true">
-                        <CheckIcon />
-                      </span>
+                    {done ? <CheckIcon /> : index + 1}
+                  </span>
+                  <span className={styles.stepText}>
+                    <span className={styles.stepLabel}>{step.label}</span>
+                    {stepValues[index] && (
+                      <span className={styles.stepValue}>{stepValues[index]}</span>
                     )}
-                  </button>
-                )
-              })}
-            </div>
+                  </span>
+                </button>
+              </li>
+            )
+          })}
+        </ol>
+
+        <div className={styles.stepPanel}>
+          {stepIndex === 0 && (
+            <CharacterStep
+              query={charactersQuery}
+              characters={characters}
+              selectedId={characterId}
+              onSelect={setCharacterId}
+              onCreateNew={() => setCharacterFormOpen(true)}
+            />
           )}
 
-          {charactersQuery.isSuccess && (
+          {stepIndex === 1 && (
+            <ModelStep
+              query={modelsQuery}
+              models={models}
+              selectedId={effectiveModelId}
+              onSelect={setModelId}
+            />
+          )}
+
+          {stepIndex === 2 && (
+            <>
+              <PersonaStep
+                query={personasQuery}
+                personas={personas}
+                selectedId={personaId}
+                onSelect={setPersonaId}
+                onCreateNew={() => setPersonaFormOpen(true)}
+              />
+
+              <div className={styles.titleField}>
+                <label htmlFor="nc-title" className={styles.titleLabel}>
+                  Chat name <span className={styles.optional}>(optional)</span>
+                </label>
+                <input
+                  id="nc-title"
+                  type="text"
+                  className={styles.titleInput}
+                  placeholder={`Chat with ${selectedCharacter?.name ?? 'the AI'}`}
+                  maxLength={255}
+                  value={title}
+                  onChange={(event) => setTitle(event.target.value)}
+                  disabled={busy}
+                />
+              </div>
+            </>
+          )}
+        </div>
+
+        <footer className={styles.footer}>
+          {stepIndex > 0 ? (
             <button
               type="button"
-              className={styles.newCharacterChip}
-              onClick={() => setCharacterFormOpen(true)}
-            >
-              <PlusIcon aria-hidden="true" />
-              New character
-            </button>
-          )}
-        </section>
-
-        <section className={styles.section} aria-labelledby="nc-model">
-          <h3 id="nc-model" className={styles.sectionTitle}>
-            Which model?
-          </h3>
-
-          {modelsQuery.isPending && (
-            <div className={styles.loading}>
-              <Spinner size={22} label="Loading models" />
-            </div>
-          )}
-
-          {modelsQuery.isError && (
-            <ErrorState
-              error={modelsQuery.error}
-              onRetry={() => {
-                void modelsQuery.refetch()
-              }}
-            />
-          )}
-
-          {modelsQuery.isSuccess && models.length === 0 && (
-            <p className={styles.noModels}>
-              No models available — the server will use its default.
-            </p>
-          )}
-
-          {models.length > 0 && (
-            <div className={styles.modelList} role="radiogroup" aria-label="AI model">
-              {models.map((model) => (
-                <ModelOption
-                  key={model.id}
-                  model={model}
-                  selected={model.id === effectiveModelId}
-                  onSelect={() => setModelId(model.id)}
-                />
-              ))}
-            </div>
-          )}
-
-          <div className={styles.titleField}>
-            <label htmlFor="nc-title" className={styles.titleLabel}>
-              Chat name <span className={styles.optional}>(optional)</span>
-            </label>
-            <input
-              id="nc-title"
-              type="text"
-              className={styles.titleInput}
-              placeholder={`Chat with ${selectedCharacter?.name ?? 'the AI'}`}
-              maxLength={255}
-              value={title}
-              onChange={(event) => setTitle(event.target.value)}
+              className={styles.back}
+              onClick={() => setStepIndex(stepIndex - 1)}
               disabled={busy}
-            />
-          </div>
-        </section>
-
-        <section className={`${styles.section} ${styles.personaSection}`} aria-labelledby="nc-persona">
-          <h3 id="nc-persona" className={styles.sectionTitle}>
-            Who are you? <span className={styles.optional}>(optional)</span>
-          </h3>
-
-          {personasQuery.isPending && (
-            <div className={styles.loading}>
-              <Spinner size={22} label="Loading personas" />
-            </div>
+            >
+              <ChevronLeftIcon aria-hidden="true" />
+              Back
+            </button>
+          ) : (
+            <span />
           )}
 
-          {personasQuery.isError && (
-            <p className={styles.personaError}>
-              Couldn&apos;t load your personas.{' '}
+          <div className={styles.footerActions}>
+            <button type="button" className={styles.cancel} onClick={onClose} disabled={busy}>
+              Cancel
+            </button>
+            {isLastStep ? (
               <button
                 type="button"
-                className={styles.personaRetry}
-                onClick={() => {
-                  void personasQuery.refetch()
-                }}
+                className={styles.create}
+                onClick={handleCreate}
+                disabled={!canCreate}
               >
-                Retry
+                {busy ? (
+                  <>
+                    <Spinner
+                      size={15}
+                      label="Creating conversation"
+                      className={styles.createSpinner}
+                    />
+                    Starting…
+                  </>
+                ) : (
+                  <>
+                    <SparklesIcon aria-hidden="true" />
+                    Start chatting
+                  </>
+                )}
               </button>
-            </p>
-          )}
-
-          {personasQuery.isSuccess && (
-            <div className={styles.personaRow} role="radiogroup" aria-label="Persona">
+            ) : (
               <button
+                type="button"
+                className={styles.create}
+                onClick={() => goToStep(stepIndex + 1)}
+                disabled={!canContinue || busy}
+              >
+                Next
+                <ChevronRightIcon aria-hidden="true" />
+              </button>
+            )}
+          </div>
+        </footer>
+      </Modal>
+
+      {personaFormOpen && (
+        <PersonaFormModal
+          open={personaFormOpen}
+          onClose={() => setPersonaFormOpen(false)}
+          onCreated={(persona) => {
+            // Selecting the new persona immediately beats re-finding it in the list.
+            setPersonaId(persona.id)
+            setPersonaFormOpen(false)
+          }}
+        />
+      )}
+
+      {characterFormOpen && (
+        <CharacterFormModal
+          open={characterFormOpen}
+          onClose={() => setCharacterFormOpen(false)}
+          onCreated={(character) => {
+            // Selecting the new character immediately beats re-finding it in the list.
+            setCharacterId(character.id)
+            setCharacterFormOpen(false)
+          }}
+        />
+      )}
+    </>
+  )
+}
+
+function CharacterStep({
+  query,
+  characters,
+  selectedId,
+  onSelect,
+  onCreateNew,
+}: {
+  query: ReturnType<typeof useCharacters>
+  characters: Character[]
+  selectedId: number | null
+  onSelect: (id: number) => void
+  onCreateNew: () => void
+}) {
+  return (
+    <section className={styles.section} aria-labelledby="nc-characters">
+      <h3 id="nc-characters" className={styles.sectionTitle}>
+        Who do you want to talk to?
+      </h3>
+
+      {query.isPending && (
+        <div className={styles.loading}>
+          <Spinner size={22} label="Loading characters" />
+        </div>
+      )}
+
+      {query.isError && (
+        <ErrorState
+          error={query.error}
+          onRetry={() => {
+            void query.refetch()
+          }}
+        />
+      )}
+
+      {query.isSuccess && characters.length === 0 && (
+        <EmptyState
+          icon={<UserIcon aria-hidden="true" />}
+          title="No characters available"
+          hint="Create the first one below to get started."
+        />
+      )}
+
+      {characters.length > 0 && (
+        <div className={styles.characterGrid} role="radiogroup" aria-label="Character">
+          {characters.map((character) => {
+            const selected = character.id === selectedId
+            return (
+              <button
+                key={character.id}
                 type="button"
                 role="radio"
-                aria-checked={personaId === null}
-                className={`${styles.personaChip} ${personaId === null ? styles.personaChipSelected : ''}`}
-                onClick={() => setPersonaId(null)}
+                aria-checked={selected}
+                className={`${styles.characterCard} ${selected ? styles.characterCardSelected : ''}`}
+                onClick={() => onSelect(character.id)}
               >
-                <span className={styles.personaChipName}>No persona</span>
-                {personaId === null && (
+                <Avatar name={character.name} src={character.avatar_url} size={52} />
+                <span className={styles.characterName}>{character.name}</span>
+                {selected && (
+                  <span className={styles.characterCheck} aria-hidden="true">
+                    <CheckIcon />
+                  </span>
+                )}
+              </button>
+            )
+          })}
+        </div>
+      )}
+
+      {query.isSuccess && (
+        <button type="button" className={styles.newCharacterChip} onClick={onCreateNew}>
+          <PlusIcon aria-hidden="true" />
+          New character
+        </button>
+      )}
+    </section>
+  )
+}
+
+function ModelStep({
+  query,
+  models,
+  selectedId,
+  onSelect,
+}: {
+  query: ReturnType<typeof useModels>
+  models: AIModel[]
+  selectedId: number | null
+  onSelect: (id: number) => void
+}) {
+  return (
+    <section className={styles.section} aria-labelledby="nc-model">
+      <h3 id="nc-model" className={styles.sectionTitle}>
+        Which model?
+      </h3>
+
+      {query.isPending && (
+        <div className={styles.loading}>
+          <Spinner size={22} label="Loading models" />
+        </div>
+      )}
+
+      {query.isError && (
+        <ErrorState
+          error={query.error}
+          onRetry={() => {
+            void query.refetch()
+          }}
+        />
+      )}
+
+      {query.isSuccess && models.length === 0 && (
+        <p className={styles.noModels}>No models available — the server will use its default.</p>
+      )}
+
+      {models.length > 0 && (
+        <div className={styles.modelList} role="radiogroup" aria-label="AI model">
+          {models.map((model) => (
+            <ModelOption
+              key={model.id}
+              model={model}
+              selected={model.id === selectedId}
+              onSelect={() => onSelect(model.id)}
+            />
+          ))}
+        </div>
+      )}
+    </section>
+  )
+}
+
+function PersonaStep({
+  query,
+  personas,
+  selectedId,
+  onSelect,
+  onCreateNew,
+}: {
+  query: ReturnType<typeof usePersonas>
+  personas: Persona[]
+  selectedId: number | null
+  onSelect: (id: number | null) => void
+  onCreateNew: () => void
+}) {
+  return (
+    <section className={styles.section} aria-labelledby="nc-persona">
+      <h3 id="nc-persona" className={styles.sectionTitle}>
+        Who are you? <span className={styles.optional}>(optional)</span>
+      </h3>
+
+      {query.isPending && (
+        <div className={styles.loading}>
+          <Spinner size={22} label="Loading personas" />
+        </div>
+      )}
+
+      {query.isError && (
+        <p className={styles.personaError}>
+          Couldn&apos;t load your personas.{' '}
+          <button
+            type="button"
+            className={styles.personaRetry}
+            onClick={() => {
+              void query.refetch()
+            }}
+          >
+            Retry
+          </button>
+        </p>
+      )}
+
+      {query.isSuccess && (
+        <div className={styles.personaRow} role="radiogroup" aria-label="Persona">
+          <button
+            type="button"
+            role="radio"
+            aria-checked={selectedId === null}
+            className={`${styles.personaChip} ${selectedId === null ? styles.personaChipSelected : ''}`}
+            onClick={() => onSelect(null)}
+          >
+            <span className={styles.personaChipName}>No persona</span>
+            {selectedId === null && (
+              <span className={styles.personaChipCheck} aria-hidden="true">
+                <CheckIcon />
+              </span>
+            )}
+          </button>
+
+          {personas.map((persona) => {
+            const selected = persona.id === selectedId
+            const details = [persona.gender, persona.age != null ? String(persona.age) : null]
+              .filter(Boolean)
+              .join(' · ')
+            return (
+              <button
+                key={persona.id}
+                type="button"
+                role="radio"
+                aria-checked={selected}
+                className={`${styles.personaChip} ${selected ? styles.personaChipSelected : ''}`}
+                onClick={() => onSelect(persona.id)}
+              >
+                <span className={styles.personaChipInfo}>
+                  <span className={styles.personaChipName}>{persona.name}</span>
+                  {details && <span className={styles.personaChipDetails}>{details}</span>}
+                </span>
+                {selected && (
                   <span className={styles.personaChipCheck} aria-hidden="true">
                     <CheckIcon />
                   </span>
                 )}
               </button>
+            )
+          })}
 
-              {personas.map((persona) => {
-                const selected = persona.id === personaId
-                const details = [persona.gender, persona.age != null ? String(persona.age) : null]
-                  .filter(Boolean)
-                  .join(' · ')
-                return (
-                  <button
-                    key={persona.id}
-                    type="button"
-                    role="radio"
-                    aria-checked={selected}
-                    className={`${styles.personaChip} ${selected ? styles.personaChipSelected : ''}`}
-                    onClick={() => setPersonaId(persona.id)}
-                  >
-                    <span className={styles.personaChipInfo}>
-                      <span className={styles.personaChipName}>{persona.name}</span>
-                      {details && <span className={styles.personaChipDetails}>{details}</span>}
-                    </span>
-                    {selected && (
-                      <span className={styles.personaChipCheck} aria-hidden="true">
-                        <CheckIcon />
-                      </span>
-                    )}
-                  </button>
-                )
-              })}
-
-              <button
-                type="button"
-                className={styles.newPersonaChip}
-                onClick={() => setPersonaFormOpen(true)}
-              >
-                <PlusIcon aria-hidden="true" />
-                New persona
-              </button>
-            </div>
-          )}
-        </section>
-      </div>
-
-      <footer className={styles.footer}>
-        <button type="button" className={styles.cancel} onClick={onClose} disabled={busy}>
-          Cancel
-        </button>
-        <button
-          type="button"
-          className={styles.create}
-          onClick={handleCreate}
-          disabled={!canCreate}
-        >
-          {busy ? (
-            <>
-              <Spinner size={15} label="Creating conversation" className={styles.createSpinner} />
-              Starting…
-            </>
-          ) : (
-            <>
-              <SparklesIcon aria-hidden="true" />
-              Start chatting
-            </>
-          )}
-        </button>
-      </footer>
-    </Modal>
-
-    {personaFormOpen && (
-      <PersonaFormModal
-        open={personaFormOpen}
-        onClose={() => setPersonaFormOpen(false)}
-        onCreated={(persona) => {
-          // Selecting the new persona immediately beats re-finding it in the list.
-          setPersonaId(persona.id)
-          setPersonaFormOpen(false)
-        }}
-      />
-    )}
-
-    {characterFormOpen && (
-      <CharacterFormModal
-        open={characterFormOpen}
-        onClose={() => setCharacterFormOpen(false)}
-        onCreated={(character) => {
-          // Selecting the new character immediately beats re-finding it in the list.
-          setCharacterId(character.id)
-          setCharacterFormOpen(false)
-        }}
-      />
-    )}
-  </>
+          <button type="button" className={styles.newPersonaChip} onClick={onCreateNew}>
+            <PlusIcon aria-hidden="true" />
+            New persona
+          </button>
+        </div>
+      )}
+    </section>
   )
 }
 

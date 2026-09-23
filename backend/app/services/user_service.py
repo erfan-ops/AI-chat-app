@@ -5,6 +5,7 @@ from __future__ import annotations
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.contact import OtpMethod
 from app.core.time import utcnow
 from app.db.models.user import User
 from app.db.repositories.ai import ModelRepository
@@ -29,6 +30,7 @@ class UserService:
         username: str | None,
         display_name: str | None,
         default_model_id: int | None,
+        preferred_otp_method: OtpMethod | None = None,
     ) -> User:
         repo = UserRepository(db)
         user = await repo.get_by_id(user_id)
@@ -39,6 +41,17 @@ class UserService:
             if existing is not None and existing.id != user.id:
                 raise ConflictError(USERNAME_TAKEN)
             user.username = username
+        if preferred_otp_method is not None:
+            # A default without a verified contact would make the next login fail
+            # closed, so the preference may only ever name a channel that exists.
+            verified = user.email if preferred_otp_method == "EMAIL" else user.mobile_number
+            if not verified:
+                raise BadRequestError(
+                    "Verify an email address first"
+                    if preferred_otp_method == "EMAIL"
+                    else "Verify a mobile number first"
+                )
+            user.preferred_otp_method = preferred_otp_method
         if default_model_id is not None:
             if await ModelRepository(db).get_active(default_model_id) is None:
                 raise BadRequestError("Unknown or inactive model")

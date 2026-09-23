@@ -63,6 +63,18 @@ class Settings(BaseSettings):
     sms_ir_template_id: int = Field(default=601570, ge=1)
     sms_ir_base_url: str = "https://api.sms.ir"
     sms_ir_timeout_seconds: float = Field(default=10.0, gt=0)
+
+    # Resend is the *other* OTP delivery method (email). Same convention as SMS
+    # above: an empty API key disables it and the endpoints answer 503 rather than
+    # attempting a send that cannot work.
+    resend_api_key: str = ""
+    resend_from_email: str = "AI-chat@mail.erfancodes.ir"
+    # Subject lines. The bodies are the two templates in ``email_service`` — a code
+    # to sign in, and a code confirming an address for the first time.
+    resend_otp_subject: str = "Your AI Chat verification code"
+    resend_activation_subject: str = "Confirm your email address"
+    # Seconds; the SDK's HTTPXClient takes an int.
+    resend_timeout_seconds: int = Field(default=10, gt=0)
     # Code lifetime, resend cooldown, per-challenge attempt cap and daily send cap.
     # The cooldown is a security control, not a nicety: without it a password
     # holder could request a fresh code per guess and the attempt cap would be moot.

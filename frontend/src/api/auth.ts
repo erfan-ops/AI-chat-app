@@ -1,5 +1,6 @@
 import { apiRequest } from './client'
 import type {
+  LoginOtpMethodRequest,
   LoginRequest,
   LoginResponse,
   OtpChallenge,
@@ -39,6 +40,16 @@ export function loginWithOtp(request: OtpVerifyRequest): Promise<LoginResponse> 
   })
 }
 
+/** Send this login's code through the other delivery method — a choice for this
+ *  login only, which never changes the account's saved default. */
+export function switchOtpMethod(request: LoginOtpMethodRequest): Promise<OtpRequiredResponse> {
+  return apiRequest<OtpRequiredResponse>('/auth/login/otp/method', {
+    method: 'POST',
+    body: request,
+    authenticated: false,
+  })
+}
+
 export function getMe(): Promise<User> {
   return apiRequest<User>('/me')
 }
@@ -47,18 +58,19 @@ export function updateMe(request: UserUpdate): Promise<User> {
   return apiRequest<User>('/me', { method: 'PATCH', body: request })
 }
 
-/** Send a verification code to the given local 10-digit mobile number.
- *  Nothing is stored until it is confirmed with {@link verifyOtpEnable}. */
+/** Send a verification code to the given contact — a local 10-digit mobile number
+ *  or an email address, per `method`. Nothing is stored until it is confirmed with
+ *  {@link verifyOtpEnable}. */
 export function startOtpEnable(request: OtpEnableRequest): Promise<OtpChallenge> {
   return apiRequest<OtpChallenge>('/me/otp/enable', { method: 'POST', body: request })
 }
 
-/** Confirm the code: stores the verified number and turns two-step on. */
+/** Confirm the code: stores the verified contact and turns two-step on. */
 export function verifyOtpEnable(request: OtpVerifyRequest): Promise<User> {
   return apiRequest<User>('/me/otp/verify', { method: 'POST', body: request })
 }
 
-/** Turn two-step off. The verified number is kept. */
+/** Turn two-step off. The verified contacts are kept. */
 export function disableOtp(): Promise<User> {
   return apiRequest<User>('/me/otp/disable', { method: 'POST' })
 }

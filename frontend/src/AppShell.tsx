@@ -1,4 +1,6 @@
 import { useCallback, useEffect, useState } from 'react'
+import { getMe } from './api/auth'
+import { updateSessionUser } from './session/authSession'
 import { ConversationSidebar } from './features/conversations/ConversationSidebar'
 import { ChatView, NoConversationPlaceholder } from './features/chat/ChatView'
 import { NewConversationModal } from './features/newConversation/NewConversationModal'
@@ -50,6 +52,16 @@ export function AppShell() {
   const [settingsOpen, setSettingsOpen] = useState(false)
   // Bumped on every open so the picker remounts with a fresh form.
   const [newChatSession, setNewChatSession] = useState(0)
+
+  // The session (and its user object) is persisted, so it can outlive a deploy and
+  // be missing fields added since it was written. Refresh it once on load: an
+  // expired token is cleared by the client as usual, and a network failure is
+  // ignored so an offline start still renders.
+  useEffect(() => {
+    getMe()
+      .then(updateSessionUser)
+      .catch(() => undefined)
+  }, [])
 
   useEffect(() => {
     if (activeConversationId !== null) {

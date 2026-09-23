@@ -15,6 +15,7 @@ dependencies = [
     "pyjwt>=2.9",
     "httpx>=0.27",
     "cloudinary>=1.46.2",
+    "resend[async]>=2.47.0",
 ]
 
 [project.optional-dependencies]
@@ -65,6 +66,12 @@ ignore = [
 
 [tool.ruff.format]
 quote-style = "double"
+
+[tool.ruff.lint.per-file-ignores]
+# The email bodies are HTML templates embedded in the module: one element per line
+# is what makes them readable and editable, and mail clients need the styles inline,
+# so the lines are long by design rather than by accident.
+"app/services/email_service.py" = ["E501"]
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"

@@ -263,7 +263,8 @@ async def test_enable_sends_code_and_masks_the_number(
     assert response.status_code == 200, response.text
     body = response.json()
     assert body["code_expires_in_seconds"] == 120
-    assert body["mobile_hint"] == "+98 912 *** 6789"
+    assert body["method"] == "SMS"
+    assert body["destination_hint"] == "+98 912 *** 6789"
     # The canonical local number reaches the provider, and the display name is the
     # user's — never the formatted value or the username when a name exists.
     assert sms.sent[-1]["mobile"] == MOBILE
@@ -482,8 +483,12 @@ async def test_login_with_otp_returns_challenge_and_no_token(
     assert body["otp_required"] is True
     assert "access_token" not in body
     assert body["code_expires_in_seconds"] == 120
-    # No hint about the number: a password holder must not learn it.
-    assert "mobile_hint" not in body
+    # The channel is named (the client has to describe the next step), but no hint
+    # about the number: a password holder must not learn it.
+    assert body["delivery_method"] == "SMS"
+    assert body["alternative_method"] is None  # no verified email on this account
+    for leaked in ("mobile_hint", "destination_hint", "email", "mobile_number"):
+        assert leaked not in body
     assert sms.sent[-1]["mobile"] == MOBILE
 
     async with session_factory() as db:

@@ -21,9 +21,10 @@ the API. Nothing is hardcoded or mocked.
   JWT access tokens; failed-login throttling (5 attempts → 60 s lockout).
 - **Settings & two-step verification** — change your username (unique across
   accounts, and checked on the server), display name and default model, and protect
-  sign-in with an SMS one-time code: enabling it verifies a mobile number first, codes
-  expire after two minutes and are single-use, and a code is required before any token
-  is issued. Password-only accounts are unaffected.
+  sign-in with a one-time code sent by **SMS or email** (your choice, and switchable for
+  a single login without changing the saved default): enabling it verifies the contact
+  first, codes expire after two minutes and are single-use, and a code is required before
+  any token is issued. Password-only accounts are unaffected.
 - **AI characters** — built-in characters (visible to everyone) plus user-created
   private ones; each carries a system prompt that shapes its personality.
 - **Streaming chat** — AI replies are *truly* incremental: each generated chunk is
@@ -72,7 +73,7 @@ the API. Nothing is hardcoded or mocked.
                           │  DeepSeek / OpenAI-compatible │ Anthropic │ mock
                           └───────────────┬───────────────┘
                                           ▼
-            Oracle DB (9 tables)   AI provider API (DeepSeek, etc.)
+            Oracle DB (11 tables)  AI provider API (DeepSeek, etc.)
             Schema is the source    (URL + API key resolved from the DB)
             of truth — the app
             never alters it
@@ -96,7 +97,7 @@ tokens return the user to the sign-in screen automatically.
 | Frontend | React 19, TypeScript, Vite, TanStack Query, CSS Modules, oxlint, Playwright (e2e) |
 | Backend | Python 3.13+, FastAPI, SQLAlchemy 2.x (async), python-oracledb (thin mode), Pydantic v2, Argon2id, PyJWT, httpx, uvicorn |
 | Tooling | `uv` (Python deps), npm (frontend deps), ruff + ty (backend QA) |
-| Database | Oracle (existing 9-table schema); tests run on in-memory SQLite — no Oracle needed |
+| Database | Oracle (existing 11-table schema); tests run on in-memory SQLite — no Oracle needed |
 | AI providers | DeepSeek / OpenAI-compatible, Anthropic, deterministic mock |
 
 ## Repository layout
@@ -161,9 +162,10 @@ npm install
 npm run dev                                # http://localhost:5173
 ```
 
-Open <http://localhost:5173>, create an account, pick a character and model, and
-start chatting. The dev server proxies `/api/…` to the backend on `:8000`, so no
-CORS configuration is needed.
+Open <http://localhost:5173>, create an account, and start a chat: the New chat flow
+walks you through choosing a character, a model and (optionally) a persona, one step
+at a time. The dev server proxies `/api/…` to the backend on `:8000`, so no CORS
+configuration is needed.
 
 Production build:
 
@@ -185,6 +187,7 @@ npm run preview                            # or: npx vite preview --host 0.0.0.0
 | `AI_API_KEY` / `AI_BASE_URL` / `AI_MODEL` | *(empty)* | Fallback credentials, used only when `AI_PROVIDER != database` |
 | `ACCESS_TOKEN_EXPIRE_MINUTES` | `1440` | Token lifetime |
 | `AI_CONTEXT_MAX_MESSAGES` / `AI_DEFAULT_CONTEXT_CHARS` | `50` / `16000` | History window and context budget |
+| `SMS_IR_API_KEY` / `RESEND_API_KEY` | *(empty)* | One-time-code providers for two-step verification — SMS.ir and Resend. Each empty value disables that channel with a `503` rather than failing at send time |
 
 With the default `AI_PROVIDER=database`, provider, endpoint, API key, and model are
 resolved from the database per conversation — the seeded DeepSeek row works out of

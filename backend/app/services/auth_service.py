@@ -10,6 +10,7 @@ from dataclasses import dataclass
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import Settings
+from app.core.contact import OtpMethod
 from app.core.logging import get_logger, structured
 from app.core.security import PasswordManager, TokenManager
 from app.core.time import utcnow
@@ -23,8 +24,9 @@ from app.exceptions import (
     ServiceUnavailableError,
     UnauthorizedError,
 )
+from app.services.otp_audit import OtpAudit
+from app.services.otp_delivery import OtpDeliveryService
 from app.services.otp_service import OtpService
-from app.services.sms_service import SmsService
 
 logger = get_logger("app.services.auth")
 
@@ -79,10 +81,17 @@ class LoginResult:
 
 @dataclass(frozen=True)
 class OtpChallengeResult:
-    """The password was correct, but a code must be verified before a token exists."""
+    """The password was correct, but a code must be verified before a token exists.
+
+    ``method`` says which channel took the code and ``alternative_method`` names the
+    other one *when it is actually usable* — so the client can offer a switch that
+    is guaranteed to work, and never has to know a contact address to do it.
+    """
 
     challenge_id: str
     expires_in_seconds: int
+    method: OtpMethod
+    alternative_method: OtpMethod | None = None
 
 
 class AuthService:
@@ -141,8 +150,9 @@ class AuthService:
         *,
         username: str,
         password: str,
-        sms: SmsService,
+        delivery: OtpDeliveryService,
         otp: OtpService,
+        audit: OtpAudit,
     ) -> LoginResult | OtpChallengeResult:
         """Authenticate a user, or start the second step when 2FA is enabled."""
         if self._attempts.is_locked(username):
@@ -162,7 +172,7 @@ class AuthService:
         if user.otp_enabled == 1:
             # No token, no last_login_at, no commit: the password was right, but
             # nothing is authenticated until the code is verified.
-            return await self._start_otp_login(user, sms=sms, otp=otp)
+            return await self._start_otp_login(user, delivery=delivery, otp=otp, audit=audit)
         user.last_login_at = utcnow()
         await db.commit()
         token, expires_in = self._tokens.create_access_token(user.id)
@@ -170,7 +180,13 @@ class AuthService:
         return LoginResult(user=user, access_token=token, expires_in_minutes=expires_in)
 
     async def complete_otp_login(
-        self, db: AsyncSession, *, challenge_id: str, code: str, otp: OtpService
+        self,
+        db: AsyncSession,
+        *,
+        challenge_id: str,
+        code: str,
+        otp: OtpService,
+        audit: OtpAudit,
     ) -> LoginResult:
         """Second step of a two-step login: consume the code, then issue the token."""
         verified = otp.verify(challenge_id=challenge_id, code=code, purpose="login")
@@ -184,33 +200,91 @@ class AuthService:
         await db.commit()
         token, expires_in = self._tokens.create_access_token(user.id)
         structured(logger, logging.INFO, "login succeeded", user_id=user.id, second_factor=True)
+        # After the commit: the login is what matters, the history records it.
+        await audit.consumed(user_id=user.id, purpose="login")
         return LoginResult(user=user, access_token=token, expires_in_minutes=expires_in)
 
     async def _start_otp_login(
-        self, user: User, *, sms: SmsService, otp: OtpService
+        self,
+        user: User,
+        *,
+        delivery: OtpDeliveryService,
+        otp: OtpService,
+        audit: OtpAudit,
+        method: OtpMethod | None = None,
+        replaces: str | None = None,
     ) -> OtpChallengeResult:
-        """Send the login code, or fail closed if the account is inconsistent."""
-        if not user.mobile_number:
+        """Send the login code to ``method`` (default: the saved preference).
+
+        Fails closed when the account cannot be reached that way: falling back to
+        the other channel would quietly send a code wherever the user did not ask
+        for it, and dropping to password-only would drop the second factor.
+
+        ``replaces`` names the challenge this one supersedes (a method switch); it
+        is only spent once the new code is in flight, so a provider failure leaves
+        the code the user already holds working.
+        """
+        chosen = method or delivery.default_method(user)
+        if chosen is None or delivery.destination_for(user, chosen) is None:
             # Reachable only by editing the database, but it must not fall through
             # to a password-only login — that would silently drop the second factor.
             structured(
-                logger, logging.ERROR, "otp enabled without a mobile number", user_id=user.id
+                logger,
+                logging.ERROR,
+                "otp enabled without a usable destination",
+                user_id=user.id,
+                method=chosen,
             )
             raise ServiceUnavailableError("Two-step verification is unavailable for this account")
-        challenge_id, code = otp.issue(user_id=user.id, purpose="login")
+
+        destination = delivery.resolve(user, chosen)
+        challenge_id, code = otp.claim(
+            user_id=user.id, purpose="login", method=chosen, destination=destination.address
+        )
         try:
-            await sms.send_verify_code(
-                mobile=f"{user.mobile_number:010d}",
-                code=code,
-                display_name=user.display_name,
-                username=user.username,
-                user_id=user.id,
-            )
+            await delivery.send(destination, code=code, user=user, purpose="login")
         except ServiceUnavailableError:
             # Let the user retry immediately when the provider is the problem.
             otp.discard(challenge_id, user_id=user.id)
             raise
+        otp.commit(challenge_id, replaces=replaces)
+        # The code is on its way, so it belongs in the history.
+        await audit.issued(
+            challenge=otp.require_live(challenge_id, purpose="login"),
+            method=chosen,
+            ttl_seconds=otp.code_ttl_seconds,
+        )
         return OtpChallengeResult(
             challenge_id=challenge_id,
             expires_in_seconds=self._settings.otp_code_ttl_seconds,
+            method=chosen,
+            alternative_method=delivery.alternative_method(user, chosen),
+        )
+
+    async def switch_otp_method(
+        self,
+        db: AsyncSession,
+        *,
+        challenge_id: str,
+        method: OtpMethod,
+        delivery: OtpDeliveryService,
+        otp: OtpService,
+        audit: OtpAudit,
+    ) -> OtpChallengeResult:
+        """Send the login code through ``method`` instead, for this login only.
+
+        The saved preference is never touched — this is a per-login choice. The
+        challenge the caller is holding is only invalidated once the replacement is
+        actually in flight, so a switch that fails (no destination, provider down,
+        cooldown) leaves their existing code working.
+        """
+        pending = otp.require_live(challenge_id, purpose="login")
+        user = await UserRepository(db).get_by_id(pending.user_id)
+        if user is None or user.status != ACTIVE_STATUS:
+            raise ForbiddenError("Account is disabled")
+        if user.otp_enabled != 1:
+            raise BadRequestError("Two-step verification is no longer enabled")
+
+        return await self._start_otp_login(
+            user, delivery=delivery, otp=otp, audit=audit, method=method, replaces=challenge_id
         )

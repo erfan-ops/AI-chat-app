@@ -10,13 +10,16 @@ import { Modal } from '../../components/Modal'
 import { Spinner } from '../../components/Spinner'
 import { pushToast } from '../../components/toastStore'
 import { errorMessage } from '../../utils/errors'
-import type { OtpChallenge, User } from '../../types/api'
+import { OTP_METHODS, otpMethodLabel, otpMethodName, parseOtpMethod } from '../../utils/otpMethod'
+import type { OtpChallenge, OtpMethod, User } from '../../types/api'
 import styles from './SettingsModal.module.css'
 
 /** Local part of an Iranian mobile: 10 digits, starting with 9. */
 const LOCAL_MOBILE_PATTERN = /^9[0-9]{9}$/
 /** Mirrors the backend's username rules (USERNAME_PATTERN in schemas/users.py). */
 const USERNAME_PATTERN = /^[A-Za-z0-9_.-]{3,32}$/
+/** Enough of a check to catch typos before a code is sent; the API decides. */
+const EMAIL_PATTERN = /^[^\s@]+@[^\s@.]+(\.[^\s@.]+)+$/
 /** Separators are tolerated while typing; the API gets the digits only. */
 const NON_DIGITS = /[^0-9]/g
 
@@ -59,6 +62,11 @@ export function SettingsModal({ open, onClose }: SettingsModalProps) {
   const [displayName, setDisplayName] = useState(user?.display_name ?? '')
   const [modelId, setModelId] = useState<number | ''>(user?.default_model_id ?? '')
   const [mobileInput, setMobileInput] = useState('')
+  const [emailInput, setEmailInput] = useState('')
+  /** Which channel the setup form is verifying right now. */
+  const [method, setMethod] = useState<OtpMethod>('SMS')
+  /** True while verifying an *additional* contact on an account that already has 2FA. */
+  const [addingContact, setAddingContact] = useState(false)
   const [challenge, setChallenge] = useState<OtpChallenge | null>(null)
   const [code, setCode] = useState('')
   const [secondsLeft, setSecondsLeft] = useState(0)
@@ -84,7 +92,10 @@ export function SettingsModal({ open, onClose }: SettingsModalProps) {
   })
 
   const sendCode = useMutation({
-    mutationFn: () => startOtpEnable({ mobile_number: mobileInput }),
+    mutationFn: () =>
+      startOtpEnable(
+        method === 'EMAIL' ? { method, email: emailInput.trim() } : { method, mobile_number: mobileInput },
+      ),
     onSuccess: (issued) => {
       setChallenge(issued)
       setCode('')
@@ -100,9 +111,21 @@ export function SettingsModal({ open, onClose }: SettingsModalProps) {
       setChallenge(null)
       setCode('')
       setMobileInput('')
+      setEmailInput('')
+      setAddingContact(false)
       pushToast('success', 'Two-step verification is on')
     },
     // A wrong code keeps the form usable so the user can just retype it.
+    onError: (error) => pushToast('error', errorMessage(error)),
+  })
+
+  /** Changing the saved default never requires a code: both contacts are verified. */
+  const setDefaultMethod = useMutation({
+    mutationFn: (next: OtpMethod) => updateMe({ preferred_otp_method: next }),
+    onSuccess: (updated: User) => {
+      updateSessionUser(updated)
+      pushToast('success', `Codes will be sent by ${otpMethodLabel(updated.preferred_otp_method)}`)
+    },
     onError: (error) => pushToast('error', errorMessage(error)),
   })
 
@@ -141,9 +164,14 @@ export function SettingsModal({ open, onClose }: SettingsModalProps) {
     saveProfile.mutate()
   }
 
-  function submitMobile(event: FormEvent<HTMLFormElement>) {
+  function submitDestination(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
-    if (!LOCAL_MOBILE_PATTERN.test(mobileInput)) {
+    if (method === 'EMAIL') {
+      if (!EMAIL_PATTERN.test(emailInput.trim())) {
+        pushToast('error', 'Enter a valid email address.')
+        return
+      }
+    } else if (!LOCAL_MOBILE_PATTERN.test(mobileInput)) {
       pushToast('error', 'Enter the 10 digits after +98, starting with 9.')
       return
     }
@@ -151,6 +179,14 @@ export function SettingsModal({ open, onClose }: SettingsModalProps) {
   }
 
   const anyPending = saveProfile.isPending || sendCode.isPending || confirmCode.isPending
+
+  const hasMobile = Boolean(user?.mobile_number)
+  const hasEmail = Boolean(user?.email)
+  const verified = { SMS: hasMobile, EMAIL: hasEmail }
+  // The contact that is not verified yet, if the account could still add one.
+  const missingMethod: OtpMethod | null = !hasMobile ? 'SMS' : !hasEmail ? 'EMAIL' : null
+  const canSwitchDefault = hasMobile && hasEmail
+  const showSetupForm = !user?.otp_enabled || addingContact
 
   return (
     <Modal open={open} onClose={handleClose} title="Settings" size="md">
@@ -269,30 +305,11 @@ export function SettingsModal({ open, onClose }: SettingsModalProps) {
 
       <h3 className={styles.sectionTitle}>Two-step verification</h3>
 
-      {user?.otp_enabled ? (
-        <>
-          <p className={styles.status}>
-            <span className={styles.statusOn}>On</span>
-            {user.mobile_number && <> · codes go to {displayMobile(user.mobile_number)}</>}
-          </p>
-          <p className={styles.fieldHint}>
-            You will be asked for a code sent by SMS each time you sign in.
-          </p>
-          <div className={styles.footer}>
-            <button
-              type="button"
-              className={styles.danger}
-              onClick={() => turnOff.mutate()}
-              disabled={turnOff.isPending}
-            >
-              {turnOff.isPending ? 'Turning off…' : 'Turn off'}
-            </button>
-          </div>
-        </>
-      ) : challenge ? (
+      {challenge ? (
         <form onSubmit={(event) => { event.preventDefault(); confirmCode.mutate() }} noValidate>
           <p className={styles.status}>
-            Code sent to {challenge.mobile_hint} · expires in {formatCountdown(secondsLeft)}
+            Code sent by {otpMethodLabel(challenge.method)} to{' '}
+            {challenge.destination_hint} · expires in {formatCountdown(secondsLeft)}
           </p>
           <div className={styles.field}>
             <label htmlFor="settings-otp-code" className={styles.label}>
@@ -336,44 +353,114 @@ export function SettingsModal({ open, onClose }: SettingsModalProps) {
             </button>
           </div>
         </form>
-      ) : (
-        <form onSubmit={submitMobile} noValidate>
+      ) : showSetupForm ? (
+        <form onSubmit={submitDestination} noValidate>
           <p className={styles.fieldHint}>
-            We will text you a code to confirm the number. Two-step verification only
-            turns on once that code is verified.
+            {addingContact
+              ? 'Verify the second contact and you will be able to switch between them at sign-in.'
+              : `We will send you a code to confirm the ${method === 'EMAIL' ? 'address' : 'number'}. Two-step verification only turns on once that code is verified.`}
           </p>
-          <div className={styles.field}>
-            <label htmlFor="settings-mobile" className={styles.label}>
-              Mobile number
-            </label>
-            <div className={styles.mobileRow}>
-              {/* Fixed prefix: the stored number is the 10-digit local part. */}
-              <span className={styles.prefix} aria-hidden="true">
-                +98
-              </span>
+
+          {/* Only the missing contact can be added; the verified one is not offered. */}
+          {(!user?.otp_enabled || (missingMethod && addingContact)) && (
+            <div className={styles.field}>
+              <span className={styles.label}>Send the code by</span>
+              <div className={styles.themeRow} role="radiogroup" aria-label="Delivery method">
+                {OTP_METHODS.filter((option) => !verified[option])
+                  .map((option) => (
+                    <button
+                      key={option}
+                      type="button"
+                      role="radio"
+                      aria-checked={method === option}
+                      className={`${styles.themeOption} ${
+                        method === option ? styles.themeOptionSelected : ''
+                      }`}
+                      onClick={() => setMethod(option)}
+                    >
+                      {otpMethodName(option)}
+                    </button>
+                  ))}
+              </div>
+            </div>
+          )}
+
+          {method === 'EMAIL' ? (
+            <div className={styles.field}>
+              <label htmlFor="settings-email" className={styles.label}>
+                Email address
+              </label>
               <input
-                id="settings-mobile"
-                type="tel"
-                className={`${styles.input} ${styles.mobileInput}`}
-                value={groupDigits(mobileInput)}
-                onChange={(event) =>
-                  setMobileInput(event.target.value.replace(NON_DIGITS, '').slice(0, 10))
-                }
-                inputMode="numeric"
-                placeholder="912 345 6789"
-                aria-describedby="settings-mobile-hint"
+                id="settings-email"
+                type="email"
+                className={styles.input}
+                value={emailInput}
+                onChange={(event) => setEmailInput(event.target.value)}
+                placeholder="you@example.com"
+                autoComplete="email"
+                spellCheck={false}
+                aria-describedby="settings-email-hint"
                 disabled={sendCode.isPending}
               />
+              <p id="settings-email-hint" className={styles.fieldHint}>
+                Codes are sent to this address. It is only stored once the code is
+                confirmed.
+              </p>
             </div>
-            <p id="settings-mobile-hint" className={styles.fieldHint}>
-              The number without the country code — 10 digits starting with 9.
-            </p>
-          </div>
+          ) : (
+            <div className={styles.field}>
+              <label htmlFor="settings-mobile" className={styles.label}>
+                Mobile number
+              </label>
+              <div className={styles.mobileRow}>
+                {/* Fixed prefix: the stored number is the 10-digit local part. */}
+                <span className={styles.prefix} aria-hidden="true">
+                  +98
+                </span>
+                <input
+                  id="settings-mobile"
+                  type="tel"
+                  className={`${styles.input} ${styles.mobileInput}`}
+                  value={groupDigits(mobileInput)}
+                  onChange={(event) =>
+                    setMobileInput(event.target.value.replace(NON_DIGITS, '').slice(0, 10))
+                  }
+                  inputMode="numeric"
+                  placeholder="912 345 6789"
+                  aria-describedby="settings-mobile-hint"
+                  disabled={sendCode.isPending}
+                />
+              </div>
+              <p id="settings-mobile-hint" className={styles.fieldHint}>
+                The number without the country code — 10 digits starting with 9.
+              </p>
+            </div>
+          )}
+
           <div className={styles.footer}>
+            {addingContact && (
+              <button
+                type="button"
+                className={styles.cancel}
+                onClick={() => {
+                  setAddingContact(false)
+                  setMethod(missingMethod ?? 'SMS')
+                }}
+                disabled={sendCode.isPending}
+              >
+                Cancel
+              </button>
+            )}
             <button
               type="submit"
               className={styles.submit}
-              disabled={!LOCAL_MOBILE_PATTERN.test(mobileInput) || sendCode.isPending || anyPending}
+              disabled={
+                (method === 'EMAIL'
+                  ? !EMAIL_PATTERN.test(emailInput.trim())
+                  : !LOCAL_MOBILE_PATTERN.test(mobileInput)) ||
+                sendCode.isPending ||
+                anyPending
+              }
             >
               {sendCode.isPending ? (
                 <>
@@ -386,6 +473,81 @@ export function SettingsModal({ open, onClose }: SettingsModalProps) {
             </button>
           </div>
         </form>
+      ) : (
+        user && (
+          <>
+            <p className={styles.status}>
+              <span className={styles.statusOn}>On</span>
+              <> · codes go by {otpMethodLabel(user.preferred_otp_method)}</>
+            </p>
+            <p className={styles.fieldHint}>
+              {user.mobile_number && <>Mobile: {displayMobile(user.mobile_number)}. </>}
+              {user.email && <>Email: {user.email}.</>}
+            </p>
+
+            {canSwitchDefault ? (
+              <div className={styles.field}>
+                <span className={styles.label}>Send codes to</span>
+                <div
+                  className={styles.themeRow}
+                  role="radiogroup"
+                  aria-label="Default delivery method"
+                >
+                  {OTP_METHODS.map((option) => (
+                    <button
+                      key={option}
+                      type="button"
+                      role="radio"
+                      aria-checked={parseOtpMethod(user.preferred_otp_method) === option}
+                      className={`${styles.themeOption} ${
+                        parseOtpMethod(user.preferred_otp_method) === option
+                          ? styles.themeOptionSelected
+                          : ''
+                      }`}
+                      onClick={() => setDefaultMethod.mutate(option)}
+                      disabled={setDefaultMethod.isPending}
+                    >
+                      {otpMethodName(option)}
+                    </button>
+                  ))}
+                </div>
+                <p className={styles.fieldHint}>
+                  Used by default at sign-in. The other one is always offered there as a
+                  one-off choice, which never changes this.
+                </p>
+              </div>
+            ) : (
+              <p className={styles.fieldHint}>
+                You will be asked for a code sent by{' '}
+                {otpMethodLabel(user.preferred_otp_method)} each time you sign in.
+              </p>
+            )}
+
+            <div className={styles.footer}>
+              {missingMethod && (
+                <button
+                  type="button"
+                  className={styles.cancel}
+                  onClick={() => {
+                    setMethod(missingMethod)
+                    setAddingContact(true)
+                  }}
+                  disabled={turnOff.isPending}
+                >
+                  {missingMethod === 'EMAIL' ? 'Add an email' : 'Add a mobile number'}
+                </button>
+              )}
+              <button
+                type="button"
+                className={styles.danger}
+                onClick={() => turnOff.mutate()}
+                disabled={turnOff.isPending}
+              >
+                {turnOff.isPending ? 'Turning off…' : 'Turn off'}
+              </button>
+            </div>
+          </>
+        )
       )}
     </Modal>
   )

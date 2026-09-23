@@ -20,8 +20,12 @@ export interface User {
   /** Verified mobile as the canonical 10-digit local form (e.g. "9123456789");
    *  the "+98" form is presentation only. */
   mobile_number: string | null
-  /** True once two-step verification is active — an SMS code is required at login. */
+  /** Verified email address, or null when none has been confirmed yet. */
+  email: string | null
+  /** True once two-step verification is active — a code is required at login. */
   otp_enabled: boolean
+  /** Channel login codes go to by default; a login may temporarily use the other. */
+  preferred_otp_method: OtpMethod
 }
 
 export interface RegisterRequest {
@@ -44,27 +48,47 @@ export interface LoginResponse {
   user: User
 }
 
+/** How a verification code reaches the user. */
+export type OtpMethod = 'SMS' | 'EMAIL'
+
 /** Returned by POST /auth/login when the account has two-step verification on:
  *  the password was right, but no token exists until the code is verified.
- *  Deliberately carries no hint about the number the code went to. */
+ *  Names the channel the code went to but never the contact itself — a password
+ *  holder must not learn the number or address behind it. */
 export interface OtpRequiredResponse {
   otp_required: true
   challenge_id: string
   /** Code lifetime in seconds (not minutes — see LoginResponse.expires_in). */
   code_expires_in_seconds: number
+  /** Channel the code was sent through. */
+  delivery_method: OtpMethod
+  /** The other channel, present only when it can actually be used. */
+  alternative_method: OtpMethod | null
 }
 
 /** A code was sent; the challenge id ties the next call to this attempt. */
 export interface OtpChallenge {
   challenge_id: string
   code_expires_in_seconds: number
-  /** Masked number the code was sent to, e.g. "+98 912 *** 6789". */
-  mobile_hint: string
+  /** Channel the code was sent through. */
+  method: OtpMethod
+  /** Masked address the code was sent to, e.g. "+98 912 *** 6789" or
+   *  "al***@example.com". Shown only where the user just typed it. */
+  destination_hint: string
 }
 
-/** Body for POST /me/otp/enable — the 10-digit number without the +98 prefix. */
+/** Body for POST /me/otp/enable — the contact to verify, by SMS or by email. */
 export interface OtpEnableRequest {
-  mobile_number: string
+  method: OtpMethod
+  /** 10 digits without the +98 prefix; required when method is "SMS". */
+  mobile_number?: string
+  email?: string
+}
+
+/** Body for POST /auth/login/otp/method — resend this login's code the other way. */
+export interface LoginOtpMethodRequest {
+  challenge_id: string
+  method: OtpMethod
 }
 
 export interface OtpVerifyRequest {
@@ -76,6 +100,7 @@ export interface UserUpdate {
   username?: string | null
   display_name?: string | null
   default_model_id?: number | null
+  preferred_otp_method?: OtpMethod
 }
 
 /** An AI character you chat with (mirrors CharacterRead). `system_prompt` is

@@ -234,6 +234,30 @@
   font-weight: 620;
 }
 
+/* Secondary action on the code step: quietly under the primary, not competing. */
+.otpSwitch {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  margin-top: 10px;
+  padding: 10px 16px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-md);
+  font-size: 13.5px;
+  font-weight: 620;
+  color: var(--text-1);
+  transition: background 120ms ease;
+}
+
+.otpSwitch:hover:not(:disabled) {
+  background: var(--bg-hover);
+}
+
+.otpSwitch:disabled {
+  opacity: 0.55;
+}
+
 .backToSignIn {
   margin-top: 4px;
   font-size: 13.5px;

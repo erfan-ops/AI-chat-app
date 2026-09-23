@@ -54,7 +54,7 @@
      "auth"
     ],
     "summary": "Log in and obtain an access token",
-    "description": "Exchanges username/password for a signed JWT access token. Send it as `Authorization: Bearer <token>` on protected endpoints.\n\nWhen the account has two-step verification enabled, no token is issued: the response instead carries `otp_required` plus a `challenge_id`, and the login is completed with `POST /auth/login/otp`.",
+    "description": "Exchanges username/password for a signed JWT access token. Send it as `Authorization: Bearer <token>` on protected endpoints.\n\nWhen the account has two-step verification enabled, no token is issued: the response instead carries `otp_required` plus a `challenge_id`, and the login is completed with `POST /auth/login/otp`. The code goes to the account's default delivery method (`SMS` or `EMAIL`); `POST /auth/login/otp/method` can send it to the other one instead.",
     "operationId": "login_auth_login_post",
     "requestBody": {
      "content": {
@@ -104,7 +104,7 @@
      "auth"
     ],
     "summary": "Complete a two-step login",
-    "description": "Second step for accounts with two-step verification: exchanges the `challenge_id` from `POST /auth/login` plus the code received by SMS for the same access token a normal login would have returned. An incorrect or expired code is rejected with 400 \u2014 never 401, which would sign the caller out of an unrelated session.",
+    "description": "Second step for accounts with two-step verification: exchanges the `challenge_id` from `POST /auth/login` plus the code that was sent for the same access token a normal login would have returned. An incorrect or expired code is rejected with 400 \u2014 never 401, which would sign the caller out of an unrelated session.",
     "operationId": "login_with_otp_auth_login_otp_post",
     "requestBody": {
      "content": {
@@ -126,6 +126,54 @@
         }
        }
       }
+     },
+     "422": {
+      "description": "Validation Error",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/auth/login/otp/method": {
+   "post": {
+    "tags": [
+     "auth"
+    ],
+    "summary": "Send this login's code through the other delivery method",
+    "description": "Sends a fresh code for the same login through `method` instead of the channel the first code used, and returns the new `challenge_id`. This is a choice for this login only: the account's saved default is untouched.\n\nThe destination is always the one stored on the account \u2014 the request names a channel, never an address. Rejections are 400-level (never 401), and 503 when the account has no verified contact for that channel.",
+    "operationId": "login_switch_otp_method_auth_login_otp_method_post",
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/LoginOtpMethodRequest"
+       }
+      }
+     },
+     "required": true
+    },
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/OtpRequiredResponse"
+        }
+       }
+      }
+     },
+     "400": {
+      "description": "Unknown or expired challenge"
+     },
+     "503": {
+      "description": "That channel is unavailable for this account"
      },
      "422": {
       "description": "Validation Error",
@@ -220,7 +268,7 @@
      "users"
     ],
     "summary": "Start enabling two-step verification",
-    "description": "Sends a one-time code to the supplied mobile number. Nothing is stored and the second factor stays off until `POST /me/otp/verify` confirms the code.",
+    "description": "Sends a one-time code to the supplied contact, by SMS (`mobile_number`) or email (`email`) depending on `method`. Nothing is stored and the second factor stays off until `POST /me/otp/verify` confirms the code.",
     "operationId": "start_otp_enable_me_otp_enable_post",
     "requestBody": {
      "content": {
@@ -267,7 +315,7 @@
      "users"
     ],
     "summary": "Confirm the code and enable two-step verification",
-    "description": "Verifies the code sent by `/me/otp/enable`, stores the verified mobile number and turns two-step verification on. An invalid or expired code is rejected with 400 and leaves the account unchanged.",
+    "description": "Verifies the code sent by `/me/otp/enable`, stores the verified contact and turns two-step verification on (a first-time enable also makes that contact the default delivery method). An invalid or expired code is rejected with 400 and leaves the account unchanged.",
     "operationId": "verify_otp_enable_me_otp_verify_post",
     "requestBody": {
      "content": {
@@ -314,7 +362,7 @@
      "users"
     ],
     "summary": "Disable two-step verification",
-    "description": "Turns two-step verification off for the authenticated user and discards any code still in flight. The verified mobile number is kept.",
+    "description": "Turns two-step verification off for the authenticated user and discards any code still in flight. The verified contacts are kept.",
     "operationId": "disable_otp_me_otp_disable_post",
     "responses": {
      "200": {
@@ -1924,6 +1972,31 @@
     "type": "object",
     "title": "HTTPValidationError"
    },
+   "LoginOtpMethodRequest": {
+    "properties": {
+     "challenge_id": {
+      "type": "string",
+      "maxLength": 128,
+      "minLength": 16,
+      "title": "Challenge Id"
+     },
+     "method": {
+      "type": "string",
+      "enum": [
+       "SMS",
+       "EMAIL"
+      ],
+      "title": "Method"
+     }
+    },
+    "type": "object",
+    "required": [
+     "challenge_id",
+     "method"
+    ],
+    "title": "LoginOtpMethodRequest",
+    "description": "Body for POST /auth/login/otp/method \u2014 resend this login's code elsewhere.\n\nOnly the channel is named: the destination always comes from the account, so a\ncaller can never redirect a code to an address of their choosing."
+   },
    "LoginOtpRequest": {
     "properties": {
      "challenge_id": {
@@ -2400,36 +2473,72 @@
       "title": "Code Expires In Seconds",
       "description": "Lifetime of the code, in seconds"
      },
-     "mobile_hint": {
+     "method": {
       "type": "string",
-      "title": "Mobile Hint",
-      "description": "Masked number the code was sent to"
+      "enum": [
+       "SMS",
+       "EMAIL"
+      ],
+      "title": "Method",
+      "description": "Channel the code was sent through"
+     },
+     "destination_hint": {
+      "type": "string",
+      "title": "Destination Hint",
+      "description": "Masked address the code was sent to"
      }
     },
     "type": "object",
     "required": [
      "challenge_id",
      "code_expires_in_seconds",
-     "mobile_hint"
+     "method",
+     "destination_hint"
     ],
     "title": "OtpChallengeRead",
     "description": "A code has been sent; the challenge id ties the next call to this attempt."
    },
    "OtpEnableRequest": {
     "properties": {
-     "mobile_number": {
+     "method": {
       "type": "string",
-      "maxLength": 32,
-      "minLength": 1,
+      "enum": [
+       "SMS",
+       "EMAIL"
+      ],
+      "title": "Method",
+      "default": "SMS"
+     },
+     "mobile_number": {
+      "anyOf": [
+       {
+        "type": "string",
+        "maxLength": 32,
+        "minLength": 1
+       },
+       {
+        "type": "null"
+       }
+      ],
       "title": "Mobile Number"
+     },
+     "email": {
+      "anyOf": [
+       {
+        "type": "string",
+        "maxLength": 200,
+        "minLength": 3
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Email"
      }
     },
     "type": "object",
-    "required": [
-     "mobile_number"
-    ],
     "title": "OtpEnableRequest",
-    "description": "Body for POST /me/otp/enable \u2014 the local 10-digit mobile number.\n\nLength is only bounded to keep the payload sane; the shape is validated by\n``normalize_mobile``, which explains what is wrong instead of returning a\nschema error."
+    "description": "Body for POST /me/otp/enable \u2014 the contact to verify and its channel.\n\nLengths are only bounded to keep the payload sane; the shape is validated by\n``normalize_mobile`` / ``normalize_email``, which explain what is wrong instead\nof returning a schema error. ``method`` defaults to SMS, so a body written\nbefore email existed still means exactly what it used to."
    },
    "OtpRequiredResponse": {
     "properties": {
@@ -2447,15 +2556,41 @@
       "type": "integer",
       "title": "Code Expires In Seconds",
       "description": "Lifetime of the code, in seconds"
+     },
+     "delivery_method": {
+      "type": "string",
+      "enum": [
+       "SMS",
+       "EMAIL"
+      ],
+      "title": "Delivery Method",
+      "description": "Channel the code was sent through"
+     },
+     "alternative_method": {
+      "anyOf": [
+       {
+        "type": "string",
+        "enum": [
+         "SMS",
+         "EMAIL"
+        ]
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Alternative Method",
+      "description": "The other usable channel, if any \u2014 absent when there is none"
      }
     },
     "type": "object",
     "required": [
      "challenge_id",
-     "code_expires_in_seconds"
+     "code_expires_in_seconds",
+     "delivery_method"
     ],
     "title": "OtpRequiredResponse",
-    "description": "The password was correct, but two-step verification is enabled.\n\nNo token is issued yet, and deliberately no hint about which number the code\nwent to: that would disclose the phone suffix to anyone holding the password,\nwhich is exactly what the second factor protects against."
+    "description": "The password was correct, but two-step verification is enabled.\n\nNo token is issued yet, and deliberately no hint about *where* the code went:\nnaming the contact would disclose the phone suffix or the address to anyone\nholding the password, which is exactly what the second factor protects against.\nThe channel is disclosed because the client cannot describe the next step\nwithout it, and it is the weaker of the two facts."
    },
    "OtpVerifyRequest": {
     "properties": {
@@ -2479,7 +2614,7 @@
      "code"
     ],
     "title": "OtpVerifyRequest",
-    "description": "Body for POST /me/otp/verify."
+    "description": "Body for POST /me/otp/verify.\n\nCarries no destination on purpose: the address that was verified is the one the\nchallenge went to, never a second client-supplied value."
    },
    "PersonaBrief": {
     "properties": {
@@ -2808,10 +2943,30 @@
       ],
       "title": "Mobile Number"
      },
+     "email": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Email"
+     },
      "otp_enabled": {
       "type": "boolean",
       "title": "Otp Enabled",
       "default": false
+     },
+     "preferred_otp_method": {
+      "type": "string",
+      "enum": [
+       "SMS",
+       "EMAIL"
+      ],
+      "title": "Preferred Otp Method",
+      "default": "SMS"
      }
     },
     "type": "object",
@@ -2868,6 +3023,21 @@
        }
       ],
       "title": "Default Model Id"
+     },
+     "preferred_otp_method": {
+      "anyOf": [
+       {
+        "type": "string",
+        "enum": [
+         "SMS",
+         "EMAIL"
+        ]
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Preferred Otp Method"
      }
     },
     "type": "object",

@@ -50,3 +50,12 @@ def normalize_mobile(raw: str) -> str:
 def format_mobile(mobile: str) -> str:
     """Display form for a canonical local mobile: ``+98 912 345 6789``."""
     return f"+98 {mobile[:3]} {mobile[3:6]} {mobile[6:]}"
+
+
+def mask_mobile(mobile: str) -> str:
+    """``9123456789`` → ``+98 912 *** 6789`` — enough to recognise, not to harvest.
+
+    Shown when a code is on its way (the caller just typed the number); the code
+    is never accompanied by the full contact.
+    """
+    return f"+98 {mobile[:3]} *** {mobile[6:]}"

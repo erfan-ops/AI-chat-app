@@ -28,6 +28,7 @@ from app.ai.base import (
 )
 from app.api.dependencies import (
     get_auth_service,
+    get_email_service,
     get_otp_service,
     get_provider_factory,
     get_session_factory,
@@ -52,6 +53,12 @@ TEST_SETTINGS = Settings(
     # Pinned so a developer's real .env can never make tests believe SMS is
     # configured — that would send live texts from the suite.
     sms_ir_api_key="",
+    # Same for email: without this the suite would adopt a live RESEND_API_KEY,
+    # and the wire-level assertions below would depend on the developer's .env.
+    resend_api_key="",
+    resend_from_email="AI-chat@mail.erfancodes.ir",
+    resend_otp_subject="Your AI Chat verification code",
+    resend_activation_subject="Confirm your email address",
     # Same reason: these tests assert on code lifetime and cooldowns, so the
     # suite must not inherit whatever timing .env happens to use.
     otp_code_ttl_seconds=120,
@@ -188,9 +195,10 @@ class FakeClock:
 class RecordingSmsService:
     """Stands in for ``SmsService``: records what would be sent, never goes out."""
 
-    def __init__(self, *, fail: bool = False) -> None:
+    def __init__(self, *, fail: bool = False, configured: bool = True) -> None:
         self.sent: list[dict[str, Any]] = []
         self.fail = fail
+        self._configured = configured
 
     async def send_verify_code(
         self,
@@ -218,9 +226,41 @@ class RecordingSmsService:
         assert self.sent, "no verification code was sent"
         return str(self.sent[-1]["code"])
 
+    @property
+    def is_configured(self) -> bool:
+        """Mirrors the real service: the delivery layer asks before offering a channel."""
+        return self._configured
+
+
+class RecordingEmailService:
+    """Stands in for ``EmailService``: records what would be sent, never goes out."""
+
+    def __init__(self, *, fail: bool = False) -> None:
+        self.sent: list[dict[str, Any]] = []
+        self.fail = fail
+
+    async def send_otp_email(
+        self, *, recipient: str, code: str, user_id: int, purpose: str
+    ) -> None:
+        if self.fail:
+            raise ServiceUnavailableError("Could not send the verification code. Please try again.")
+        self.sent.append(
+            {"recipient": recipient, "code": code, "user_id": user_id, "purpose": purpose}
+        )
+
+    @property
+    def last_code(self) -> str:
+        """The code the API generated for the most recent send."""
+        assert self.sent, "no verification code was emailed"
+        return str(self.sent[-1]["code"])
+
+    @property
+    def is_configured(self) -> bool:
+        return True
+
 
 # Pinned rather than inherited: Settings() also reads the developer's .env, which
-# would make "SMS not configured" configured (and reach the network).
+# would make "not configured" configured (and reach the network).
 SMS_UNCONFIGURED_SETTINGS = Settings(
     jwt_secret=TEST_SETTINGS.jwt_secret,
     database_url=TEST_SETTINGS.database_url,
@@ -247,6 +287,14 @@ async def sms() -> RecordingSmsService:
     """Installed for every test, so none of them can call the real provider."""
     fake = RecordingSmsService()
     app.dependency_overrides[get_sms_service] = lambda: fake
+    return fake
+
+
+@pytest_asyncio.fixture(autouse=True)
+async def email() -> RecordingEmailService:
+    """The email counterpart, installed for every test for the same reason."""
+    fake = RecordingEmailService()
+    app.dependency_overrides[get_email_service] = lambda: fake
     return fake
 
 

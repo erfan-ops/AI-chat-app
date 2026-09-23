@@ -100,13 +100,26 @@ and uses the `AI_API_KEY` / `AI_BASE_URL` / `AI_MODEL` env fallbacks.
 - The login throttle (5 failures → 60 s, `429` + `Retry-After`) is in-memory per
   process — not shared across workers.
 - **Two-step verification** (`app/services/two_factor_service.py`, `otp_service.py`,
-  `sms_service.py`): the second step never issues a token — `POST /auth/login` returns
-  `otp_required` + a `challenge_id` and `POST /auth/login/otp` completes it. Mobile
-  numbers are stored in the local 10-digit form (`MOBILE_NUMBER` is `NUMBER(10)`) and
-  sent to SMS.ir that way. OTP challenges live in-process like the login throttle
-  (**single worker or sticky sessions**; see `docs/otp-2fa-notes.md`). An incorrect or
-  expired code is **400, never 401** — the frontend signs out on any authenticated 401.
-  Never log or return a code, and never send a code before the password is verified.
+  `otp_delivery.py`, `sms_service.py`, `email_service.py`): the second step never issues
+  a token — `POST /auth/login` returns `otp_required` + a `challenge_id` and
+  `POST /auth/login/otp` completes it. A code goes by **SMS or email**; `OtpService` is
+  channel-agnostic (a challenge carries `method` + `destination`) and
+  `OtpDeliveryService` is the only place that picks a provider, so a new channel means a
+  new service and one branch — never a second OTP implementation. Mobile numbers are
+  stored in the local 10-digit form (`MOBILE_NUMBER` is `NUMBER(10)`) and sent to SMS.ir
+  that way; emails are stored canonical (lowercase ASCII, `app/core/email.py`) and sent
+  as one of the two HTML templates in `email_service.py`, chosen by `Purpose`.
+  `USERS.PREFERRED_OTP_METHOD` NULL means SMS; a login may use the other verified
+  channel for that login only (`POST /auth/login/otp/method`, which never touches the
+  saved preference), and a default with no destination **fails closed (503)** rather than
+  substituting a channel. The cooldown is per (user, method); the daily cap is per user.
+  OTP challenges live in-process like the login throttle (**single worker or sticky
+  sessions**; see `docs/otp-2fa-notes.md`), while `OTP_LOG` records the history of issued
+  codes (insert once the provider accepts, `CONSUMED`/`CONSUMED_AT` on use) in its own
+  short session — best effort, never load-bearing, never holding the code itself.
+  An incorrect or expired code is **400, never 401** — the frontend signs out on any
+  authenticated 401. Never log or return a code, a destination, or an API key, and never
+  send a code before the password is verified.
 
 ## Invariants & gotchas
 
@@ -132,7 +145,11 @@ and uses the `AI_API_KEY` / `AI_BASE_URL` / `AI_MODEL` env fallbacks.
   `render_created_at` formatting the timestamp as UTC ISO-8601); the AI's reply envelope
   is parsed by `parse_completion` and streamed through
   `extract_streamed_content`. Keep it pure so it stays unit-testable
-  (`tests/test_context.py`).
+  (`tests/test_context.py`). `MESSAGE_FORMAT_HINT` teaches reply *targeting*:
+  `reply_to_id` is null by default, and the model is told to set it only when it
+  deliberately answers an earlier message — never the newest one. Its example is what
+  models copy, so keep the ordinary answer in it quoted-with-null, or every reply
+  becomes a quote in the UI.
 - `.env.example` lists every setting with empty (or built-in default) values —
   copy it to `.env` and fill in real values (`.env` is gitignored; `JWT_SECRET`
   and the Cloudinary credentials must be set for those features to work).
