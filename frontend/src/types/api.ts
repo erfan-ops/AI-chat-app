@@ -73,6 +73,7 @@ export interface OtpVerifyRequest {
 }
 
 export interface UserUpdate {
+  username?: string | null
   display_name?: string | null
   default_model_id?: number | null
 }

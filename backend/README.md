@@ -183,7 +183,9 @@ uv run ty check app
 
 - `POST /auth/register` — creates an account. The password is hashed with **Argon2id**
   (argon2-cffi) and only the hash is stored in `USERS.PASSWORD_HASH`. Usernames are
-  unique (DB-enforced).
+  unique (DB-enforced, `UK_USERS_USERNAME`) and case-sensitive; `PATCH /me` can change
+  one later and answers `409` if another account already holds it. Existing tokens stay
+  valid across a rename — they carry the user id, not the username.
 - `POST /auth/login` — verifies the password (timing-hardened against unknown
   usernames), updates `LAST_LOGIN_AT`, and returns a signed **JWT** access token
   (`sub` = user id, `iat`/`exp` validated on every request). After 5 failed attempts
@@ -207,7 +209,7 @@ uv run ty check app
 |---|---|
 | `POST /auth/register` | Create account (public) |
 | `POST /auth/login` | Get JWT access token (public) |
-| `GET /me` · `PATCH /me` | Profile; update display name / default model |
+| `GET /me` · `PATCH /me` | Profile; update username / display name / default model (a taken username is `409`) |
 | `GET /characters` | Active AI characters: built-in + the user's own — the same scope for administrators |
 | `GET /characters/{id}` | One character (admin: any owner or status) |
 | `POST /characters` | Create a private character owned by the caller |

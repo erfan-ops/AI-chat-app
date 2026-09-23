@@ -10,7 +10,7 @@ import { Avatar } from '../../components/Avatar'
 import { EmptyState } from '../../components/EmptyState'
 import { ErrorState } from '../../components/ErrorState'
 import { Spinner } from '../../components/Spinner'
-import { ChatBubbleIcon, ChevronLeftIcon } from '../../components/Icons'
+import { ChatBubbleIcon, ChevronLeftIcon, SidebarIcon } from '../../components/Icons'
 import { ApiError } from '../../api/client'
 import { pushToast } from '../../components/toastStore'
 import type { Message } from '../../types/api'
@@ -20,12 +20,48 @@ export interface ChatViewProps {
   conversationId: number
   /** Shown on narrow screens to go back to the conversation list. */
   onBack: () => void
+  /** Whether the conversation panel is collapsed (wide screens only). */
+  sidebarHidden?: boolean
+  /** Collapses/expands the conversation panel (wide screens only). */
+  onToggleSidebar?: () => void
+}
+
+/** Panel toggle for wide screens — hidden on narrow ones, where the back
+ *  button plays that role. */
+function SidebarToggle({
+  sidebarHidden,
+  onToggleSidebar,
+  floating = false,
+}: {
+  sidebarHidden: boolean
+  onToggleSidebar: () => void
+  /** Corner-positioned variant, for the view that has no header. */
+  floating?: boolean
+}) {
+  return (
+    <button
+      type="button"
+      className={`${styles.sidebarToggle} ${floating ? styles.sidebarToggleFloating : ''}`}
+      onClick={onToggleSidebar}
+      aria-controls="conversations-panel"
+      aria-expanded={!sidebarHidden}
+      aria-label={sidebarHidden ? 'Show conversations' : 'Hide conversations'}
+      title={sidebarHidden ? 'Show conversations' : 'Hide conversations'}
+    >
+      <SidebarIcon aria-hidden="true" />
+    </button>
+  )
 }
 
 /** The active conversation: header (character + model), message history and
  *  the message composer. The conversation detail query also catches the case
  *  where the conversation was deleted or is no longer reachable (404). */
-export function ChatView({ conversationId, onBack }: ChatViewProps) {
+export function ChatView({
+  conversationId,
+  onBack,
+  sidebarHidden = false,
+  onToggleSidebar,
+}: ChatViewProps) {
   const conversationQuery = useQuery({
     queryKey: ['conversation', conversationId],
     queryFn: () => getConversation(conversationId),
@@ -97,6 +133,9 @@ export function ChatView({ conversationId, onBack }: ChatViewProps) {
         >
           <ChevronLeftIcon aria-hidden="true" />
         </button>
+        {onToggleSidebar && (
+          <SidebarToggle sidebarHidden={sidebarHidden} onToggleSidebar={onToggleSidebar} />
+        )}
         {conversation.character ? (
           <button
             type="button"
@@ -154,10 +193,26 @@ export function ChatView({ conversationId, onBack }: ChatViewProps) {
   )
 }
 
-/** Placeholder shown when no conversation is open (desktop layout). */
-export function NoConversationPlaceholder() {
+export interface NoConversationPlaceholderProps {
+  sidebarHidden?: boolean
+  onToggleSidebar?: () => void
+}
+
+/** Placeholder shown when no conversation is open (desktop layout). Keeps the
+ *  panel toggle available, so a collapsed sidebar can always be brought back. */
+export function NoConversationPlaceholder({
+  sidebarHidden = false,
+  onToggleSidebar,
+}: NoConversationPlaceholderProps = {}) {
   return (
     <section className={styles.chat}>
+      {onToggleSidebar && (
+        <SidebarToggle
+          sidebarHidden={sidebarHidden}
+          onToggleSidebar={onToggleSidebar}
+          floating
+        />
+      )}
       <div className={styles.center}>
         <EmptyState
           icon={<ChatBubbleIcon aria-hidden="true" />}

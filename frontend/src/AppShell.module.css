@@ -16,6 +16,16 @@
   height: 100%;
 }
 
+/* ---- Wide screens: the panel can be collapsed to show only the chat ----
+   Narrow screens keep the drawer behaviour below, where this flag is ignored
+   (the drawer is driven by `shellSidebarOpen`). */
+
+@media (min-width: 801px) {
+  .shellSidebarHidden .sidebarPane {
+    display: none;
+  }
+}
+
 /* ---- Narrow screens: sidebar becomes a slide-over drawer ----
    The sidebar stays visible whenever it is "open"; the chat fills the
    screen once a conversation is selected. */

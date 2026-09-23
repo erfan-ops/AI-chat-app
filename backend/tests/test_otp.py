@@ -9,11 +9,13 @@ from __future__ import annotations
 
 from typing import Any
 
+import pytest
 from httpx import AsyncClient
 
 from app.api.dependencies import get_sms_service
 from app.core.mobile import normalize_mobile
 from app.db.models.user import User
+from app.db.repositories.users import UserRepository
 from app.exceptions import BadRequestError
 from app.main import app
 from tests.conftest import (
@@ -69,6 +71,90 @@ async def test_update_display_name(client: AsyncClient) -> None:
     assert response.json()["display_name"] == "Alice A"
 
 
+async def test_update_username(client: AsyncClient) -> None:
+    headers, _user = await _headers(client)
+
+    response = await client.patch("/me", json={"username": "alice2"}, headers=headers)
+
+    assert response.status_code == 200
+    assert response.json()["username"] == "alice2"
+
+
+async def test_renamed_user_logs_in_with_the_new_username(client: AsyncClient) -> None:
+    headers, _user = await _headers(client)
+    await client.patch("/me", json={"username": "alice2"}, headers=headers)
+
+    old = await client.post("/auth/login", json={"username": "alice", "password": TEST_PASSWORD})
+    new = await client.post("/auth/login", json={"username": "alice2", "password": TEST_PASSWORD})
+
+    assert old.status_code == 401
+    assert new.status_code == 200
+    assert new.json()["user"]["username"] == "alice2"
+
+
+async def test_update_username_rejects_a_taken_name(client: AsyncClient) -> None:
+    headers_alice, alice = await _headers(client, "alice")
+    await _headers(client, "bob")
+
+    response = await client.patch("/me", json={"username": "bob"}, headers=headers_alice)
+
+    assert response.status_code == 409
+    assert response.json() == {"detail": "Username is already taken"}
+    # Unchanged server-side.
+    profile = await client.get("/me", headers=headers_alice)
+    assert profile.json()["username"] == alice["username"]
+
+
+async def test_username_uniqueness_survives_a_race(
+    client: AsyncClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The pre-check can lose to a concurrent registration of the same name.
+
+    ``UK_USERS_USERNAME`` is the actual guarantee, so a lost race must still be a
+    409 rather than an unhandled IntegrityError (500).
+    """
+    headers, _alice = await _headers(client, "alice")
+    await _headers(client, "bob")
+
+    async def blind(self: UserRepository, username: str) -> None:
+        return None
+
+    monkeypatch.setattr(UserRepository, "get_by_username", blind)
+
+    response = await client.patch("/me", json={"username": "bob"}, headers=headers)
+
+    assert response.status_code == 409
+    assert response.json() == {"detail": "Username is already taken"}
+
+
+async def test_update_username_is_case_sensitive(client: AsyncClient) -> None:
+    """Usernames are case-sensitive in Oracle, so this is a distinct account."""
+    headers, _user = await _headers(client, "alice")
+    await _headers(client, "Bob")
+
+    response = await client.patch("/me", json={"username": "BOB"}, headers=headers)
+
+    assert response.status_code == 200
+    assert response.json()["username"] == "BOB"
+
+
+async def test_update_username_to_own_name_is_allowed(client: AsyncClient) -> None:
+    headers, _user = await _headers(client)
+
+    response = await client.patch("/me", json={"username": "alice"}, headers=headers)
+
+    assert response.status_code == 200
+    assert response.json()["username"] == "alice"
+
+
+async def test_update_username_validation(client: AsyncClient) -> None:
+    headers, _user = await _headers(client)
+
+    for bad in ("ab", "a" * 33, "has space", "has/slash", ""):
+        response = await client.patch("/me", json={"username": bad}, headers=headers)
+        assert response.status_code == 422, bad
+
+
 async def test_update_default_model(client: AsyncClient) -> None:
     headers, _user = await _headers(client)
 
@@ -91,6 +177,14 @@ async def test_settings_require_authentication(client: AsyncClient) -> None:
     response = await client.patch("/me", json={"display_name": "Nope"})
 
     assert response.status_code == 401
+
+
+async def test_empty_update_is_rejected(client: AsyncClient) -> None:
+    headers, _user = await _headers(client)
+
+    response = await client.patch("/me", json={}, headers=headers)
+
+    assert response.status_code == 422
 
 
 async def test_settings_only_affect_the_caller(client: AsyncClient, session_factory: Any) -> None:

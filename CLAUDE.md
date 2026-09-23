@@ -80,11 +80,15 @@ frontend/ React 19 SPA: feature folders, TanStack Query for server state, SSE vi
   `MessageList` renders the quote by looking the target up in loaded pages
   (degrades gracefully when the target is older than the loaded window).
 - **Settings & two-step verification**: the sidebar footer opens
-  `features/settings/SettingsModal` (display name, default model, SMS two-step
-  verification). When 2FA is on, `POST /auth/login` returns `otp_required` instead of
-  a token and `AuthPage` switches to a code prompt; the session user is refreshed
-  through `authSession.updateSessionUser`. Rejections there are 400-level on purpose —
-  the client signs out on any authenticated 401.
+  `features/settings/SettingsModal` — username (unique across accounts; the API answers
+  `409` when taken, and tokens survive a rename since they carry the user id), display
+  name, default model, SMS two-step verification. When 2FA is on, `POST /auth/login`
+  returns `otp_required` instead of a token and `AuthPage` switches to a code prompt;
+  the session user is refreshed through `authSession.updateSessionUser`. Rejections
+  there are 400-level on purpose — the client signs out on any authenticated 401. The
+  same dialog holds the theme choice (light/dark/system) from `theme/themeStore.ts`,
+  which sets `data-theme` on `<html>` for `styles/tokens.css` (index.html applies it
+  pre-paint).
 
 ## Gotchas
 

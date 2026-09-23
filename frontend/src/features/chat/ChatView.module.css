@@ -1,4 +1,5 @@
 .chat {
+  position: relative; /* positioning context for the floating panel toggle */
   display: flex;
   flex-direction: column;
   height: 100%;
@@ -44,6 +45,43 @@
 .back svg {
   width: 22px;
   height: 22px;
+}
+
+/* Panel toggle: sits where the back button sits on narrow screens, which is why
+   the two are mutually exclusive. */
+.sidebarToggle {
+  display: grid;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  border-radius: var(--radius-sm);
+  color: var(--text-2);
+  flex-shrink: 0;
+  transition: background 120ms ease, color 120ms ease;
+}
+
+.sidebarToggle:hover {
+  background: var(--bg-hover);
+  color: var(--text-1);
+}
+
+.sidebarToggle svg {
+  width: 19px;
+  height: 19px;
+}
+
+/* The empty state has no header to sit in, so the toggle floats in the corner. */
+.sidebarToggleFloating {
+  position: absolute;
+  top: 12px;
+  left: 12px;
+  z-index: 2;
+}
+
+@media (max-width: 800px) {
+  .sidebarToggle {
+    display: none;
+  }
 }
 
 /* Clickable header avatar (opens the character profile). No padding, so the box

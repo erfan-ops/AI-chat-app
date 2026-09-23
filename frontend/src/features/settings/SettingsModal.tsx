@@ -3,6 +3,8 @@ import type { FormEvent } from 'react'
 import { useMutation } from '@tanstack/react-query'
 import { disableOtp, startOtpEnable, updateMe, verifyOtpEnable } from '../../api/auth'
 import { useSession, updateSessionUser } from '../../session/authSession'
+import { THEMES, resolveTheme, setTheme, useTheme } from '../../theme/themeStore'
+import type { Theme } from '../../theme/themeStore'
 import { useModels } from '../models/useModels'
 import { Modal } from '../../components/Modal'
 import { Spinner } from '../../components/Spinner'
@@ -13,6 +15,8 @@ import styles from './SettingsModal.module.css'
 
 /** Local part of an Iranian mobile: 10 digits, starting with 9. */
 const LOCAL_MOBILE_PATTERN = /^9[0-9]{9}$/
+/** Mirrors the backend's username rules (USERNAME_PATTERN in schemas/users.py). */
+const USERNAME_PATTERN = /^[A-Za-z0-9_.-]{3,32}$/
 /** Separators are tolerated while typing; the API gets the digits only. */
 const NON_DIGITS = /[^0-9]/g
 
@@ -32,6 +36,12 @@ function formatCountdown(seconds: number): string {
   return `${minutes}:${String(rest).padStart(2, '0')}`
 }
 
+const THEME_LABELS: Record<Theme, string> = {
+  light: 'Light',
+  dark: 'Dark',
+  system: 'System',
+}
+
 export interface SettingsModalProps {
   open: boolean
   onClose: () => void
@@ -42,8 +52,10 @@ export interface SettingsModalProps {
 export function SettingsModal({ open, onClose }: SettingsModalProps) {
   const session = useSession()
   const models = useModels()
+  const theme = useTheme()
   const user = session?.user
 
+  const [username, setUsername] = useState(user?.username ?? '')
   const [displayName, setDisplayName] = useState(user?.display_name ?? '')
   const [modelId, setModelId] = useState<number | ''>(user?.default_model_id ?? '')
   const [mobileInput, setMobileInput] = useState('')
@@ -51,9 +63,16 @@ export function SettingsModal({ open, onClose }: SettingsModalProps) {
   const [code, setCode] = useState('')
   const [secondsLeft, setSecondsLeft] = useState(0)
 
+  const trimmedUsername = username.trim()
+  const usernameValid = USERNAME_PATTERN.test(trimmedUsername)
+  // Only sent when it actually changed — and never as an empty string, which
+  // the API would reject as too short.
+  const usernameChanged = usernameValid && trimmedUsername !== user?.username
+
   const saveProfile = useMutation({
     mutationFn: () =>
       updateMe({
+        username: usernameChanged ? trimmedUsername : undefined,
         display_name: displayName.trim() || undefined,
         default_model_id: modelId === '' ? undefined : modelId,
       }),
@@ -139,6 +158,28 @@ export function SettingsModal({ open, onClose }: SettingsModalProps) {
         <h3 className={styles.sectionTitle}>Profile</h3>
 
         <div className={styles.field}>
+          <label htmlFor="settings-username" className={styles.label}>
+            Username
+          </label>
+          <input
+            id="settings-username"
+            type="text"
+            className={styles.input}
+            value={username}
+            onChange={(event) => setUsername(event.target.value)}
+            maxLength={32}
+            autoComplete="username"
+            spellCheck={false}
+            aria-describedby="settings-username-hint"
+            disabled={saveProfile.isPending}
+          />
+          <p id="settings-username-hint" className={styles.fieldHint}>
+            3–32 characters: letters, digits, underscores, dots or dashes. You sign
+            in with this, so it has to be unique.
+          </p>
+        </div>
+
+        <div className={styles.field}>
           <label htmlFor="settings-display-name" className={styles.label}>
             Display name
           </label>
@@ -183,7 +224,7 @@ export function SettingsModal({ open, onClose }: SettingsModalProps) {
           <button
             type="submit"
             className={styles.submit}
-            disabled={saveProfile.isPending}
+            disabled={saveProfile.isPending || !usernameValid}
           >
             {saveProfile.isPending ? (
               <>
@@ -196,6 +237,33 @@ export function SettingsModal({ open, onClose }: SettingsModalProps) {
           </button>
         </div>
       </form>
+
+      <hr className={styles.divider} />
+
+      <h3 className={styles.sectionTitle}>Appearance</h3>
+      <div className={styles.field}>
+        <div className={styles.themeRow} role="radiogroup" aria-label="Theme">
+          {THEMES.map((option) => (
+            <button
+              key={option}
+              type="button"
+              role="radio"
+              aria-checked={theme === option}
+              className={`${styles.themeOption} ${
+                theme === option ? styles.themeOptionSelected : ''
+              }`}
+              onClick={() => setTheme(option)}
+            >
+              {THEME_LABELS[option]}
+            </button>
+          ))}
+        </div>
+        <p className={styles.fieldHint}>
+          {theme === 'system'
+            ? `Following your device — currently ${resolveTheme()}.`
+            : 'Applies to this browser only.'}
+        </p>
+      </div>
 
       <hr className={styles.divider} />
 

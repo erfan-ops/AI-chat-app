@@ -1,0 +1,17 @@
+import { chromium } from 'playwright'
+const browser = await chromium.launch({ channel: 'chrome', headless: true })
+const page = await browser.newPage({ viewport: { width: 1366, height: 900 } })
+await page.goto('http://localhost:5173', { waitUntil: 'networkidle' })
+await page.getByLabel('Username').fill('alice_new_mue6maal')
+await page.getByLabel('Password').fill('e2e-password-123')
+await page.getByRole('button', { name: 'Sign in' }).click()
+await page.waitForSelector('aside', { timeout: 15000 })
+await page.getByRole('button', { name: 'Settings' }).click()
+await page.getByLabel('Username').waitFor({ state: 'visible', timeout: 10000 })
+await page.waitForTimeout(600)
+await page.screenshot({ path: 'e2e/shots/tmp-username-field.png' })
+// Also the invalid state, to check the disabled button reads clearly.
+await page.getByLabel('Username').fill('bad name!')
+await page.waitForTimeout(200)
+await page.screenshot({ path: 'e2e/shots/tmp-username-invalid.png' })
+await browser.close()

@@ -175,3 +175,34 @@ select.input {
 .submitSpinner {
   color: inherit;
 }
+
+/* ---- Appearance ---- */
+
+.themeRow {
+  display: flex;
+  gap: 8px;
+}
+
+.themeOption {
+  flex: 1;
+  padding: 9px 12px;
+  border: 1.5px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--bg-panel);
+  font-size: 13.5px;
+  font-weight: 620;
+  color: var(--text-2);
+  transition: border-color 120ms ease, background 120ms ease, color 120ms ease;
+}
+
+.themeOption:hover {
+  border-color: var(--border-strong);
+  background: var(--bg-hover);
+}
+
+.themeOptionSelected,
+.themeOptionSelected:hover {
+  border-color: var(--accent);
+  background: var(--bg-active);
+  color: var(--text-1);
+}

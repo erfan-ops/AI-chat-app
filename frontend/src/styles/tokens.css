@@ -1,5 +1,8 @@
 /* Design tokens + base styles for the AI Chat application.
-   Light theme is the default; dark theme activates via the user's OS setting. */
+   Light is the default palette; the dark one applies when <html> carries
+   data-theme="dark". The choice itself (light / dark / system) lives in
+   src/theme/themeStore.ts, which resolves "system" against the OS setting and
+   sets that attribute — see the pre-paint script in index.html. */
 
 /* ---- Typeface ----------------------------------------------------------------
    IRANYekanX (variable, wght 100-1000) renders Persian/Arabic-script text.
@@ -70,45 +73,43 @@
   --composer-gutter: 16px;
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    color-scheme: dark;
+:root[data-theme='dark'] {
+  color-scheme: dark;
 
-    --bg-app: #0c0f14;
-    --bg-panel: #141821;
-    --bg-sidebar: #10141c;
-    --bg-chat: #0f1319;
-    --bg-hover: rgba(255, 255, 255, 0.07);
-    --bg-active: rgba(99, 102, 241, 0.22);
-    --bg-input: #1a1f2b;
-    --bg-overlay: rgba(0, 0, 0, 0.55);
-    --bg-bubble-user: #6366f1;
-    --bg-bubble-ai: #1a1f2b;
-    --bg-empty-avatar: #232a38;
+  --bg-app: #0c0f14;
+  --bg-panel: #141821;
+  --bg-sidebar: #10141c;
+  --bg-chat: #0f1319;
+  --bg-hover: rgba(255, 255, 255, 0.07);
+  --bg-active: rgba(99, 102, 241, 0.22);
+  --bg-input: #1a1f2b;
+  --bg-overlay: rgba(0, 0, 0, 0.55);
+  --bg-bubble-user: #6366f1;
+  --bg-bubble-ai: #1a1f2b;
+  --bg-empty-avatar: #232a38;
 
-    --border: #262c39;
-    --border-strong: #343c4d;
+  --border: #262c39;
+  --border-strong: #343c4d;
 
-    --text-1: #e7eaf2;
-    --text-2: #a9b2c4;
-    --text-3: #7c8699;
-    --text-on-accent: #ffffff;
-    --text-bubble-user: #ffffff;
-    --text-bubble-ai: #e7eaf2;
+  --text-1: #e7eaf2;
+  --text-2: #a9b2c4;
+  --text-3: #7c8699;
+  --text-on-accent: #ffffff;
+  --text-bubble-user: #ffffff;
+  --text-bubble-ai: #e7eaf2;
 
-    --accent: #6366f1;
-    --accent-hover: #7a7df5;
-    --accent-pressed: #4f46e5;
-    --danger: #f04a5f;
-    --danger-hover: #f26d7e;
-    --success: #4ade80;
-    --warning: #fbbf24;
-    --focus-ring: 0 0 0 3px rgba(99, 102, 241, 0.4);
+  --accent: #6366f1;
+  --accent-hover: #7a7df5;
+  --accent-pressed: #4f46e5;
+  --danger: #f04a5f;
+  --danger-hover: #f26d7e;
+  --success: #4ade80;
+  --warning: #fbbf24;
+  --focus-ring: 0 0 0 3px rgba(99, 102, 241, 0.4);
 
-    --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.4);
-    --shadow-md: 0 4px 14px rgba(0, 0, 0, 0.5);
-    --shadow-lg: 0 12px 32px rgba(0, 0, 0, 0.6);
-  }
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.4);
+  --shadow-md: 0 4px 14px rgba(0, 0, 0, 0.5);
+  --shadow-lg: 0 12px 32px rgba(0, 0, 0, 0.6);
 }
 
 /* ---- Reset / base ------------------------------------------------------------ */

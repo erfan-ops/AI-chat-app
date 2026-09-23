@@ -6,15 +6,17 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from app.schemas.users import UserRead
-
-USERNAME_PATTERN = r"^[A-Za-z0-9_.-]+$"
+from app.schemas.users import USERNAME_MAX_LENGTH, USERNAME_MIN_LENGTH, USERNAME_PATTERN, UserRead
 
 
 class RegisterRequest(BaseModel):
     """Body for POST /auth/register."""
 
-    username: str = Field(min_length=3, max_length=32, pattern=USERNAME_PATTERN)
+    username: str = Field(
+        min_length=USERNAME_MIN_LENGTH,
+        max_length=USERNAME_MAX_LENGTH,
+        pattern=USERNAME_PATTERN,
+    )
     password: str = Field(min_length=8, max_length=128)
     display_name: str | None = Field(default=None, min_length=1, max_length=100)
 
@@ -22,7 +24,7 @@ class RegisterRequest(BaseModel):
 class LoginRequest(BaseModel):
     """Body for POST /auth/login."""
 
-    username: str = Field(min_length=1, max_length=32)
+    username: str = Field(min_length=1, max_length=USERNAME_MAX_LENGTH)
     password: str = Field(min_length=1, max_length=128)
 
 

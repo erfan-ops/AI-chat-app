@@ -168,6 +168,15 @@ export function UserIcon(props: IconProps) {
   )
 }
 
+export function SidebarIcon(props: IconProps) {
+  return (
+    <svg {...base(props)}>
+      <rect x="3" y="4.5" width="18" height="15" rx="2.5" />
+      <path d="M9.5 4.5v15" />
+    </svg>
+  )
+}
+
 export function SettingsIcon(props: IconProps) {
   return (
     <svg {...base(props)}>

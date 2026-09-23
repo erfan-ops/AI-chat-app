@@ -6,6 +6,7 @@ import { SettingsModal } from './features/settings/SettingsModal'
 import styles from './AppShell.module.css'
 
 const ACTIVE_CONVERSATION_KEY = 'ai-chat.activeConversation'
+const SIDEBAR_HIDDEN_KEY = 'ai-chat.sidebarHidden'
 
 function readInitialConversationId(): number | null {
   try {
@@ -17,10 +18,22 @@ function readInitialConversationId(): number | null {
   }
 }
 
+/** Desktop preference: start with the conversation panel collapsed or not.
+ *  Kept in localStorage (unlike the active conversation) so it survives a
+ *  browser restart — it is a workspace preference, not session state. */
+function readInitialSidebarHidden(): boolean {
+  try {
+    return localStorage.getItem(SIDEBAR_HIDDEN_KEY) === '1'
+  } catch {
+    return false
+  }
+}
+
 /**
  * Main two-pane layout: conversation sidebar + active chat.
  * Holds the pure-UI state (which conversation is open, whether the sidebar
- * drawer is visible on narrow screens, whether the new-chat modal is open).
+ * drawer is visible on narrow screens, whether the conversation panel is
+ * collapsed on wide ones, whether a modal is open).
  * All server state lives in the React Query cache. The open conversation is
  * remembered in sessionStorage so a reload returns to the same chat.
  */
@@ -28,7 +41,11 @@ export function AppShell() {
   const [activeConversationId, setActiveConversationId] = useState<number | null>(
     readInitialConversationId,
   )
+  // Narrow screens: the sidebar is a drawer that closes once a chat is picked.
   const [sidebarOpen, setSidebarOpen] = useState(true)
+  // Wide screens: the user can collapse the panel to see only the chat. Separate
+  // from `sidebarOpen` so picking a conversation does not hide it on desktop.
+  const [sidebarHidden, setSidebarHidden] = useState(readInitialSidebarHidden)
   const [newChatOpen, setNewChatOpen] = useState(false)
   const [settingsOpen, setSettingsOpen] = useState(false)
   // Bumped on every open so the picker remounts with a fresh form.
@@ -68,14 +85,29 @@ export function AppShell() {
     setNewChatOpen(true)
   }, [])
 
+  const toggleSidebar = useCallback(() => {
+    setSidebarHidden((hidden) => {
+      try {
+        localStorage.setItem(SIDEBAR_HIDDEN_KEY, hidden ? '0' : '1')
+      } catch {
+        // Storage unavailable — the preference just won't survive a reload.
+      }
+      return !hidden
+    })
+  }, [])
+
   const handleCreated = useCallback((id: number) => {
     setActiveConversationId(id)
     setSidebarOpen(false)
   }, [])
 
   return (
-    <div className={`${styles.shell} ${sidebarOpen ? styles.shellSidebarOpen : ''}`}>
-      <div className={styles.sidebarPane}>
+    <div
+      className={`${styles.shell} ${sidebarOpen ? styles.shellSidebarOpen : ''} ${
+        sidebarHidden ? styles.shellSidebarHidden : ''
+      }`}
+    >
+      <div className={styles.sidebarPane} id="conversations-panel">
         <ConversationSidebar
           activeConversationId={activeConversationId}
           onSelectConversation={selectConversation}
@@ -86,12 +118,17 @@ export function AppShell() {
 
       <main className={styles.chatPane}>
         {activeConversationId === null ? (
-          <NoConversationPlaceholder />
+          <NoConversationPlaceholder
+            sidebarHidden={sidebarHidden}
+            onToggleSidebar={toggleSidebar}
+          />
         ) : (
           <ChatView
             key={activeConversationId}
             conversationId={activeConversationId}
             onBack={backToConversations}
+            sidebarHidden={sidebarHidden}
+            onToggleSidebar={toggleSidebar}
           />
         )}
       </main>

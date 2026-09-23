@@ -74,6 +74,7 @@ src/
     auth.ts characters.ts models.ts conversations.ts messages.ts
     cloudinary.ts          #   signed upload: signature from the API, file straight to Cloudinary
   session/authSession.ts   # JWT + user in localStorage, expiry, reactive subscription
+  theme/themeStore.ts      # light/dark/system choice → data-theme on <html>
   utils/dates.ts errors.ts # naive-UTC ISO parsing (backend stores UTC without zone), errors
   utils/cloudinary.ts      # avatar delivery URLs: on-the-fly resize + auto format/quality
   utils/cropImage.ts       # 1:1 crop → 512×512 WebP in the browser (canvas, no upload)
@@ -86,7 +87,7 @@ src/
     characters/            # cached character lookup (avatars), create + profile dialogs,
                            #   avatar picker (crop → upload to Cloudinary)
     models/                # shared ['models'] query (picker + settings)
-    settings/SettingsModal # profile (display name, default model) + two-step verification
+    settings/SettingsModal # profile (username, display name, default model) + two-step verification
     personas/              # user personas: cached list + create-persona form modal
     newConversation/       # character + model picker modal (+ optional persona picker)
     chat/                  # ChatView, MessageList, MessageComposer,
@@ -119,13 +120,23 @@ its family at the front of the `body` stack.
   and the token only arrives from `POST /auth/login/otp`. A wrong or expired code is
   a 400 — never a 401, because this client would treat that as an expired session and
   sign the user out.
-- **Settings**: the sidebar footer opens a settings dialog — display name and
-  default model (`PATCH /me`), and two-step verification (`/me/otp/*`). Enabling it
-  sends a code to a mobile number entered as 10 digits after a fixed `+98` prefix
-  (the stored value is the canonical local number, never the formatted one), and the
-  flag only turns on once that code is verified. `/me/otp/*` rejections are 400-level
-  for the same reason as above, and a successful change updates the cached session
-  via `updateSessionUser` so the sidebar reflects it without a reload.
+- **Settings**: the sidebar footer opens a settings dialog — username, display name and
+  default model (`PATCH /me`), theme, and two-step verification (`/me/otp/*`). The
+  username field only sends a value when it actually changed and is validated client-side
+  to the API's rules; a name another account already holds comes back as a `409`, which
+  the dialog reports inline (it is never a 401, so the user is not signed out). A
+  successful rename updates the cached session, so the sidebar footer reflects it
+  immediately — and since the token carries the user id, the session survives it.
+  Enabling 2FA sends a code to a mobile number entered as 10 digits after a fixed
+  `+98` prefix (the stored value is the canonical local number, never the formatted
+  one), and the flag only turns on once that code is verified. `/me/otp/*` rejections
+  are 400-level for the same reason as above, and a successful change updates the
+  cached session via `updateSessionUser` so the sidebar reflects it without a reload.
+- **Theme**: light/dark/system is a per-browser preference in `theme/themeStore.ts`,
+  applied as `data-theme` on `<html>` — which is what `styles/tokens.css` keys the
+  dark palette off. A pre-paint script in `index.html` applies it before the first
+  frame, so a dark-theme user never sees a light flash. "System" follows the OS live;
+  an explicit choice wins over it.
 - **Errors**: the backend returns `{"detail": string}` (or a pydantic list for 422).
   The client normalizes both into a user-readable `ApiError`.
 - **Sending messages**: `POST /conversations/{id}/messages` persists the user message,

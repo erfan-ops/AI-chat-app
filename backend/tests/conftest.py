@@ -52,6 +52,12 @@ TEST_SETTINGS = Settings(
     # Pinned so a developer's real .env can never make tests believe SMS is
     # configured — that would send live texts from the suite.
     sms_ir_api_key="",
+    # Same reason: these tests assert on code lifetime and cooldowns, so the
+    # suite must not inherit whatever timing .env happens to use.
+    otp_code_ttl_seconds=120,
+    otp_resend_cooldown_seconds=60,
+    otp_max_verify_attempts=5,
+    otp_max_sends_per_day=10,
 )
 
 TEST_PASSWORD = "password123"

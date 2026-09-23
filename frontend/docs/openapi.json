@@ -104,7 +104,7 @@
      "auth"
     ],
     "summary": "Complete a two-step login",
-    "description": "Second step for accounts with two-step verification: exchanges the `challenge_id` from `POST /auth/login` plus the code received by SMS for the same access token a normal login would have returned. An incorrect or expired code is rejected with 400 \u00e2\u20ac\u201d never 401, which would sign the caller out of an unrelated session.",
+    "description": "Second step for accounts with two-step verification: exchanges the `challenge_id` from `POST /auth/login` plus the code received by SMS for the same access token a normal login would have returned. An incorrect or expired code is rejected with 400 \u2014 never 401, which would sign the caller out of an unrelated session.",
     "operationId": "login_with_otp_auth_login_otp_post",
     "requestBody": {
      "content": {
@@ -170,7 +170,7 @@
      "users"
     ],
     "summary": "Update the authenticated user's profile",
-    "description": "Update the display name and/or the default AI model.",
+    "description": "Update the username, display name and/or the default AI model. The username must be unique \u2014 a duplicate is 409.",
     "operationId": "update_me_me_patch",
     "requestBody": {
      "content": {
@@ -192,6 +192,9 @@
         }
        }
       }
+     },
+     "409": {
+      "description": "Username is already taken"
      },
      "422": {
       "description": "Validation Error",
@@ -1587,7 +1590,7 @@
      "name"
     ],
     "title": "CharacterCreate",
-    "description": "Body for POST /characters.\n\nFor a normal user the owner is always the authenticated user \u00e2\u20ac\u201d never the request\nbody. An administrator may additionally pass ``owner_user_id`` (explicit ``null``\ncreates a global/built-in character) and ``status``.\nLengths mirror the ``CHARACTERS`` column widths."
+    "description": "Body for POST /characters.\n\nFor a normal user the owner is always the authenticated user \u2014 never the request\nbody. An administrator may additionally pass ``owner_user_id`` (explicit ``null``\ncreates a global/built-in character) and ``status``.\nLengths mirror the ``CHARACTERS`` column widths."
    },
    "CharacterRead": {
     "properties": {
@@ -1748,7 +1751,7 @@
     },
     "type": "object",
     "title": "CharacterUpdate",
-    "description": "Body for PATCH /characters/{id} \u00e2\u20ac\u201d at least one field must be provided.\n\nOwners may edit ``name``/``description``/``avatar_url``/``system_prompt`` on their\nown characters; ``owner_user_id`` and ``status`` are administrator-only."
+    "description": "Body for PATCH /characters/{id} \u2014 at least one field must be provided.\n\nOwners may edit ``name``/``description``/``avatar_url``/``system_prompt`` on their\nown characters; ``owner_user_id`` and ``status`` are administrator-only."
    },
    "ConversationCreate": {
     "properties": {
@@ -1794,7 +1797,7 @@
        }
       ],
       "title": "User Persona Id",
-      "description": "Optional persona the user role-plays as. Must belong to the authenticated user. Omit for no persona \u00e2\u20ac\u201d the AI then just follows the character prompt."
+      "description": "Optional persona the user role-plays as. Must belong to the authenticated user. Omit for no persona \u2014 the AI then just follows the character prompt."
      }
     },
     "type": "object",
@@ -1943,7 +1946,7 @@
      "code"
     ],
     "title": "LoginOtpRequest",
-    "description": "Body for POST /auth/login/otp \u00e2\u20ac\u201d the second step of a two-step login."
+    "description": "Body for POST /auth/login/otp \u2014 the second step of a two-step login."
    },
    "LoginRequest": {
     "properties": {
@@ -2305,7 +2308,7 @@
      "created_at"
     ],
     "title": "ModelRead",
-    "description": "A model offered for conversations.\n\nEndpoint credentials (``AI_ENDPOINTS.BASE_URL`` / ``API_KEY``) are never exposed \u00e2\u20ac\u201d\nonly the endpoint's id."
+    "description": "A model offered for conversations.\n\nEndpoint credentials (``AI_ENDPOINTS.BASE_URL`` / ``API_KEY``) are never exposed \u2014\nonly the endpoint's id."
    },
    "ModelUpdate": {
     "properties": {
@@ -2384,7 +2387,7 @@
     },
     "type": "object",
     "title": "ModelUpdate",
-    "description": "Body for PATCH /models/{id} (administrators only) \u00e2\u20ac\u201d at least one field."
+    "description": "Body for PATCH /models/{id} (administrators only) \u2014 at least one field."
    },
    "OtpChallengeRead": {
     "properties": {
@@ -2426,7 +2429,7 @@
      "mobile_number"
     ],
     "title": "OtpEnableRequest",
-    "description": "Body for POST /me/otp/enable \u00e2\u20ac\u201d the local 10-digit mobile number.\n\nLength is only bounded to keep the payload sane; the shape is validated by\n``normalize_mobile``, which explains what is wrong instead of returning a\nschema error."
+    "description": "Body for POST /me/otp/enable \u2014 the local 10-digit mobile number.\n\nLength is only bounded to keep the payload sane; the shape is validated by\n``normalize_mobile``, which explains what is wrong instead of returning a\nschema error."
    },
    "OtpRequiredResponse": {
     "properties": {
@@ -2663,7 +2666,7 @@
     },
     "type": "object",
     "title": "PersonaUpdate",
-    "description": "Body for PATCH /personas/{id} \u00e2\u20ac\u201d at least one field must be provided."
+    "description": "Body for PATCH /personas/{id} \u2014 at least one field must be provided."
    },
    "RegisterRequest": {
     "properties": {
@@ -2827,6 +2830,20 @@
    },
    "UserUpdate": {
     "properties": {
+     "username": {
+      "anyOf": [
+       {
+        "type": "string",
+        "maxLength": 32,
+        "minLength": 3,
+        "pattern": "^[A-Za-z0-9_.-]+$"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Username"
+     },
      "display_name": {
       "anyOf": [
        {
@@ -2855,7 +2872,7 @@
     },
     "type": "object",
     "title": "UserUpdate",
-    "description": "Body for PATCH /me \u00e2\u20ac\u201d at least one field must be provided."
+    "description": "Body for PATCH /me \u2014 at least one field must be provided.\n\n``username`` follows the same rules as registration; uniqueness is enforced\nby the database and reported as 409."
    },
    "ValidationError": {
     "properties": {

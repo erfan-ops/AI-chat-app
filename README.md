@@ -19,11 +19,11 @@ the API. Nothing is hardcoded or mocked.
 
 - **Accounts** — registration and login with Argon2id password hashing and signed
   JWT access tokens; failed-login throttling (5 attempts → 60 s lockout).
-- **Settings & two-step verification** — change your display name and default
-  model, and protect sign-in with an SMS one-time code: enabling it verifies a
-  mobile number first, codes expire after two minutes and are single-use, and a
-  code is required before any token is issued. Password-only accounts are
-  unaffected.
+- **Settings & two-step verification** — change your username (unique across
+  accounts, and checked on the server), display name and default model, and protect
+  sign-in with an SMS one-time code: enabling it verifies a mobile number first, codes
+  expire after two minutes and are single-use, and a code is required before any token
+  is issued. Password-only accounts are unaffected.
 - **AI characters** — built-in characters (visible to everyone) plus user-created
   private ones; each carries a system prompt that shapes its personality.
 - **Streaming chat** — AI replies are *truly* incremental: each generated chunk is
@@ -44,8 +44,9 @@ the API. Nothing is hardcoded or mocked.
   the whole model catalog; regular users manage only their own. Character *listing*
   is scoped the same way for everyone (built-in + your own) — administrators reach
   other characters through id-based reads and CRUD.
-- **Modern UI** — light/dark theme (follows the OS), mobile-friendly layout,
-  avatars with initial fallbacks, typing indicator, and a toasts/error system.
+- **Modern UI** — light/dark theme, following the OS or pinned per browser in
+  settings; mobile-friendly layout, avatars with initial fallbacks, typing
+  indicator, and a toasts/error system.
   Persian text renders in a bundled IRANYekanX webfont (Latin keeps the system
   font stack).
 

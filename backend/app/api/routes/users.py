@@ -30,7 +30,11 @@ async def get_me(
     "/me",
     response_model=UserRead,
     summary="Update the authenticated user's profile",
-    description="Update the display name and/or the default AI model.",
+    description=(
+        "Update the username, display name and/or the default AI model. "
+        "The username must be unique — a duplicate is 409."
+    ),
+    responses={409: {"description": "Username is already taken"}},
 )
 async def update_me(
     body: UserUpdate,
@@ -40,6 +44,7 @@ async def update_me(
     return await user_service.update_profile(
         db,
         user.id,
+        username=body.username,
         display_name=body.display_name,
         default_model_id=body.default_model_id,
     )

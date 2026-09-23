@@ -6,6 +6,12 @@ from datetime import datetime
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
+# Username rules, shared by registration and profile updates so the two cannot
+# drift. The DB column is VARCHAR2(100) but the application is stricter.
+USERNAME_PATTERN = r"^[A-Za-z0-9_.-]+$"
+USERNAME_MIN_LENGTH = 3
+USERNAME_MAX_LENGTH = 32
+
 
 class UserRead(BaseModel):
     """Public user profile. Never contains the password hash."""
@@ -35,13 +41,23 @@ class UserRead(BaseModel):
 
 
 class UserUpdate(BaseModel):
-    """Body for PATCH /me — at least one field must be provided."""
+    """Body for PATCH /me — at least one field must be provided.
 
+    ``username`` follows the same rules as registration; uniqueness is enforced
+    by the database and reported as 409.
+    """
+
+    username: str | None = Field(
+        default=None,
+        min_length=USERNAME_MIN_LENGTH,
+        max_length=USERNAME_MAX_LENGTH,
+        pattern=USERNAME_PATTERN,
+    )
     display_name: str | None = Field(default=None, min_length=1, max_length=100)
     default_model_id: int | None = Field(default=None, ge=1)
 
     @model_validator(mode="after")
     def _at_least_one_field(self) -> UserUpdate:
-        if self.display_name is None and self.default_model_id is None:
-            raise ValueError("Provide at least one of: display_name, default_model_id")
+        if self.username is None and self.display_name is None and self.default_model_id is None:
+            raise ValueError("Provide at least one of: username, display_name, default_model_id")
         return self

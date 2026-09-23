@@ -6,6 +6,26 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta name="theme-color" content="#4f46e5" />
     <title>AI Chat</title>
+    <script>
+      // Resolve the saved theme before the first paint, so a dark-theme user never
+      // sees a light flash. Keep in sync with src/theme/themeStore.ts.
+      (function () {
+        var resolved = 'light'
+        try {
+          var saved = localStorage.getItem('ai-chat.theme')
+          resolved =
+            saved === 'light' || saved === 'dark'
+              ? saved
+              : window.matchMedia('(prefers-color-scheme: dark)').matches
+                ? 'dark'
+                : 'light'
+        } catch (error) {
+          // Storage blocked: fall back to the OS setting.
+          resolved = window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light'
+        }
+        document.documentElement.dataset.theme = resolved
+      })()
+    </script>
   </head>
   <body>
     <div id="root"></div>
