@@ -89,3 +89,8 @@ Desktop.ini
 *.tmp
 *.bak
 *.orig
+
+# ── Local patch shelf ────────────────────────────────────────────────────────
+# Saved-but-not-applied changes (see patches/README.md). Kept in the working tree
+# for reference; never part of the repository's history.
+/patches/

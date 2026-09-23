@@ -47,6 +47,7 @@ two_factor_service = TwoFactorService()
 async def start_otp_enable(
     body: OtpEnableRequest,
     user: Annotated[User, Depends(get_current_user)],
+    db: Annotated[AsyncSession, Depends(get_db)],
     delivery: Annotated[OtpDeliveryService, Depends(get_otp_delivery_service)],
     otp: Annotated[OtpService, Depends(get_otp_service)],
     audit: Annotated[OtpAudit, Depends(get_otp_audit)],
@@ -54,6 +55,7 @@ async def start_otp_enable(
     destination = body.mobile_number if body.method == "SMS" else body.email
     assert destination is not None  # guaranteed by OtpEnableRequest
     issued = await two_factor_service.start_enable(
+        db,
         user=user,
         method=body.method,
         destination=destination,

@@ -89,9 +89,9 @@ All `VARCHAR2` columns use byte semantics (`CHAR_USED = B`).
 | CREATED_AT | TIMESTAMP(6) | N | `systimestamp` | |
 | UPDATED_AT | TIMESTAMP(6) | N | `systimestamp` | |
 | LAST_LOGIN_AT | TIMESTAMP(6) | Y | — | Set on successful login |
-| MOBILE_NUMBER | NUMBER(10) | Y | — | Verified mobile as the **local 10-digit** form (`9123456789`). The `+98` international form does not fit this column; it is presentation only |
+| MOBILE_NUMBER | NUMBER(10) | Y | — | Verified mobile as the **local 10-digit** form (`9123456789`). The `+98` international form does not fit this column; it is presentation only. UNIQUE (`UK_USERS_MOBILE_NUMBER`) — one account per number |
 | OTP_ENABLED | NUMBER(1) | N | `0` | `1` = a one-time code is required at login (SMS or email). Only set after a destination is verified |
-| EMAIL | VARCHAR2(200) | Y | — | Verified email address, stored canonical (lowercase ASCII). Added 2026-09-23 by the project owner; like `MOBILE_NUMBER`, written only after a code sent to it came back. **No unique constraint** — email is a delivery destination, never an identifier |
+| EMAIL | VARCHAR2(200) | Y | — | Verified email address, stored canonical (lowercase ASCII). Added 2026-09-23 by the project owner; like `MOBILE_NUMBER`, written only after a code sent to it came back. UNIQUE (`UK_USERS_EMAIL`) — one account per address |
 | PREFERRED_OTP_METHOD | VARCHAR2(20) | Y | — | `SMS` \| `EMAIL` — which channel login codes go to. **NULL means `SMS`**, so accounts that predate email are unchanged |
 | ROLE | VARCHAR2(20) | N | `'ROLE_user'` | Spring-style role name; app never overrides on insert |
 
@@ -280,6 +280,10 @@ All `VARCHAR2` columns use byte semantics (`CHAR_USED = B`).
 ## Constraints & Indexes
 
 - **Primary keys:** `PK_<TABLE>_ID` on every table, single-column (`ID`).
+- **Contact uniqueness:** `UK_USERS_USERNAME`, `UK_USERS_MOBILE_NUMBER` and
+  `UK_USERS_EMAIL` — a username, a verified mobile number and a verified email address
+  each belong to exactly one account. The API checks before writing and maps a lost race
+  (`ORA-00001`) to `409` rather than a 500.
 - **Foreign keys:**
   - `FK_USERS_DEFAULT_MODEL_ID` — USERS.DEFAULT_MODEL_ID → AI_MODELS.ID
   - `FK_AI_MODELS_PROVIDER_ID` — AI_MODELS.PROVIDER_ID → PROVIDERS.ID

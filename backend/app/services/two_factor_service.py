@@ -14,6 +14,7 @@ from __future__ import annotations
 import logging
 from dataclasses import dataclass
 
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.contact import OtpMethod, mask_destination
@@ -42,8 +43,28 @@ class ChallengeIssued:
 class TwoFactorService:
     """Enabling/disabling two-step verification for the authenticated user."""
 
+    @staticmethod
+    async def _reject_taken_destination(
+        db: AsyncSession, *, user_id: int, method: OtpMethod, destination: str
+    ) -> None:
+        """Refuse a contact another account already verified.
+
+        The user's own contact is fine — that is the "add the other channel" case,
+        or simply re-verifying what they already have.
+        """
+        repo = UserRepository(db)
+        if method == "EMAIL":
+            holder = await repo.get_by_email(destination)
+            taken = "That email address is already linked to another account"
+        else:
+            holder = await repo.get_by_mobile(int(destination))
+            taken = "That mobile number is already linked to another account"
+        if holder is not None and holder.id != user_id:
+            raise ConflictError(taken)
+
     async def start_enable(
         self,
+        db: AsyncSession,
         *,
         user: User,
         method: OtpMethod,
@@ -55,6 +76,12 @@ class TwoFactorService:
         """Send a code to ``destination``; nothing is stored until it is verified."""
         if user.otp_enabled == 1 and delivery.destination_for(user, method) == destination:
             raise ConflictError("Two-step verification is already enabled for this destination")
+        # A contact belongs to one account (UK_USERS_MOBILE_NUMBER / UK_USERS_EMAIL).
+        # Checked here so a code is never sent to an address that cannot be attached
+        # — the constraint catches the race, this catches the ordinary case.
+        await self._reject_taken_destination(
+            db, user_id=user.id, method=method, destination=destination
+        )
 
         challenge_id, code = otp.claim(
             user_id=user.id, purpose="verify_contact", method=method, destination=destination
@@ -124,7 +151,17 @@ class TwoFactorService:
             # for a destination that does not exist yet.
             user.preferred_otp_method = verified.method
         user.updated_at = utcnow()
-        await db.commit()
+        try:
+            await db.commit()
+        except IntegrityError as exc:
+            # UK_USERS_MOBILE_NUMBER / UK_USERS_EMAIL: another account verified this
+            # contact between the check above and here.
+            await db.rollback()
+            raise ConflictError(
+                "That email address is already linked to another account"
+                if verified.method == "EMAIL"
+                else "That mobile number is already linked to another account"
+            ) from exc
         await db.refresh(user)
         structured(
             logger,

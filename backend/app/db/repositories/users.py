@@ -20,6 +20,19 @@ class UserRepository:
         stmt = select(User).where(User.username == username)
         return (await self._db.scalars(stmt)).first()
 
+    async def get_by_mobile(self, mobile: int) -> User | None:
+        """The account holding that verified mobile number, if any."""
+        stmt = select(User).where(User.mobile_number == mobile)
+        return (await self._db.scalars(stmt)).first()
+
+    async def get_by_email(self, email: str) -> User | None:
+        """The account holding that verified email address, if any.
+
+        Compared against the canonical (lowercase) form both sides are stored in.
+        """
+        stmt = select(User).where(User.email == email)
+        return (await self._db.scalars(stmt)).first()
+
     async def add(self, user: User) -> User:
         """Stage an insert; the caller commits."""
         self._db.add(user)

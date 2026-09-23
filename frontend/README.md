@@ -139,7 +139,10 @@ its family at the front of the `body` stack.
   address**, and the flag only turns on once that code is verified. Verifying the first
   contact makes it the default delivery method; verifying the other one later adds it
   without moving the default, and only then does the "Send codes to" selector appear
-  (`PATCH /me {preferred_otp_method}`). `/me/otp/*` rejections are 400-level for the same
+  (`PATCH /me {preferred_otp_method}`). Each verified contact is listed with a **Change**
+  action that opens the same form for a replacement — the old number or address keeps
+  working until the new one answers a code, and an address another account has verified
+  comes back as a `409`. `/me/otp/*` rejections are 400-level for the same
   reason as above, and a successful change updates the cached session via
   `updateSessionUser` so the sidebar reflects it without a reload.
 - **Choosing where a login code goes**: `POST /auth/login` names the channel

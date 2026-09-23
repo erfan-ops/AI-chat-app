@@ -290,6 +290,114 @@ async def test_enable_then_verify_stores_number_and_flags(
     assert profile["mobile_number"] == MOBILE
 
 
+async def test_a_contact_another_account_verified_is_refused_before_sending(
+    client: AsyncClient, sms: RecordingSmsService, clock: FakeClock
+) -> None:
+    """A number belongs to one account (UK_USERS_MOBILE_NUMBER).
+
+    Checked before the send, so no code goes out to a contact that could never be
+    attached, and the second account gets a plain conflict rather than a 500.
+    """
+    headers_alice, _alice = await _headers(client, "alice")
+    await _enable_otp(client, headers_alice, sms, clock)
+    headers_bob, _bob = await _headers(client, "bob")
+    sent_before = len(sms.sent)
+
+    response = await client.post(
+        "/me/otp/enable", json={"mobile_number": MOBILE}, headers=headers_bob
+    )
+
+    assert response.status_code == 409
+    assert response.json() == {"detail": "That mobile number is already linked to another account"}
+    assert len(sms.sent) == sent_before  # nothing was sent
+
+
+async def test_re_verifying_your_own_number_is_allowed(
+    client: AsyncClient, sms: RecordingSmsService, clock: FakeClock
+) -> None:
+    """The uniqueness rule is about *other* accounts, not about your own contact."""
+    headers, _user = await _headers(client)
+    await _enable_otp(client, headers, sms, clock)
+    await client.post("/me/otp/disable", headers=headers)
+
+    response = await client.post("/me/otp/enable", json={"mobile_number": MOBILE}, headers=headers)
+
+    assert response.status_code == 200, response.text
+
+
+async def test_a_contact_taken_between_check_and_write_is_a_conflict(
+    client: AsyncClient,
+    sms: RecordingSmsService,
+    clock: FakeClock,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The pre-check can lose a race; the DB constraint is the real guarantee.
+
+    ``get_by_mobile`` is blinded so the check passes while another account already
+    holds the number — the commit is then what refuses it.
+    """
+    from app.db.repositories.users import UserRepository
+
+    headers_alice, _alice = await _headers(client, "alice")
+    await _enable_otp(client, headers_alice, sms, clock)
+    headers_bob, _bob = await _headers(client, "bob")
+
+    async def blind(self: UserRepository, mobile: int) -> None:
+        return None
+
+    monkeypatch.setattr(UserRepository, "get_by_mobile", blind)
+    start = await client.post("/me/otp/enable", json={"mobile_number": MOBILE}, headers=headers_bob)
+    assert start.status_code == 200, start.text
+
+    response = await client.post(
+        "/me/otp/verify",
+        json={"challenge_id": start.json()["challenge_id"], "code": sms.last_code},
+        headers=headers_bob,
+    )
+
+    assert response.status_code == 409
+    assert response.json() == {"detail": "That mobile number is already linked to another account"}
+
+
+async def test_a_verified_number_can_be_replaced_by_verifying_a_new_one(
+    client: AsyncClient, sms: RecordingSmsService, clock: FakeClock
+) -> None:
+    """Changing your number is the same act as verifying one: confirm the new one.
+
+    The old number keeps working until the new one is confirmed, and (because the
+    column is unique) it is free for another account afterwards.
+    """
+    headers, _user = await _headers(client)
+    await _enable_otp(client, headers, sms, clock)  # MOBILE
+    replacement = "9123456780"
+
+    start = await client.post(
+        "/me/otp/enable", json={"mobile_number": replacement}, headers=headers
+    )
+    assert start.status_code == 200, start.text
+    # The old one is untouched until the new one is confirmed.
+    me = await client.get("/me", headers=headers)
+    assert me.json()["mobile_number"] == MOBILE
+
+    confirmed = await client.post(
+        "/me/otp/verify",
+        json={"challenge_id": start.json()["challenge_id"], "code": sms.last_code},
+        headers=headers,
+    )
+
+    assert confirmed.status_code == 200, confirmed.text
+    assert confirmed.json()["mobile_number"] == replacement
+    # Changing the contact is not a preference change.
+    assert confirmed.json()["preferred_otp_method"] == "SMS"
+
+    # The freed number can now be verified by someone else.
+    headers_bob, _bob = await _headers(client, "bob")
+    bob_start = await client.post(
+        "/me/otp/enable", json={"mobile_number": MOBILE}, headers=headers_bob
+    )
+    assert bob_start.status_code == 200, bob_start.text
+
+
 async def test_verify_with_wrong_code_is_400_not_401(
     client: AsyncClient, sms: RecordingSmsService
 ) -> None:

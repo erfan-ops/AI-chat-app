@@ -66,7 +66,8 @@ export function SettingsModal({ open, onClose }: SettingsModalProps) {
   /** Which channel the setup form is verifying right now. */
   const [method, setMethod] = useState<OtpMethod>('SMS')
   /** True while verifying an *additional* contact on an account that already has 2FA. */
-  const [addingContact, setAddingContact] = useState(false)
+  /** Why the verification form is open: adding the missing contact, or replacing one. */
+  const [contactForm, setContactForm] = useState<'add' | 'change' | null>(null)
   const [challenge, setChallenge] = useState<OtpChallenge | null>(null)
   const [code, setCode] = useState('')
   const [secondsLeft, setSecondsLeft] = useState(0)
@@ -112,7 +113,7 @@ export function SettingsModal({ open, onClose }: SettingsModalProps) {
       setCode('')
       setMobileInput('')
       setEmailInput('')
-      setAddingContact(false)
+      setContactForm(null)
       pushToast('success', 'Two-step verification is on')
     },
     // A wrong code keeps the form usable so the user can just retype it.
@@ -186,7 +187,25 @@ export function SettingsModal({ open, onClose }: SettingsModalProps) {
   // The contact that is not verified yet, if the account could still add one.
   const missingMethod: OtpMethod | null = !hasMobile ? 'SMS' : !hasEmail ? 'EMAIL' : null
   const canSwitchDefault = hasMobile && hasEmail
-  const showSetupForm = !user?.otp_enabled || addingContact
+  const showSetupForm = !user?.otp_enabled || contactForm !== null
+
+  /** Open the form to replace a contact that is already verified. */
+  function changeContact(next: OtpMethod) {
+    setMethod(next)
+    setMobileInput('')
+    setEmailInput('')
+    setContactForm('change')
+  }
+
+  /** The current contact for the method being changed, for the form's own wording. */
+  const replacing =
+    contactForm === 'change'
+      ? method === 'EMAIL'
+        ? user?.email
+        : user?.mobile_number
+          ? displayMobile(user.mobile_number)
+          : null
+      : null
 
   return (
     <Modal open={open} onClose={handleClose} title="Settings" size="md">
@@ -356,13 +375,21 @@ export function SettingsModal({ open, onClose }: SettingsModalProps) {
       ) : showSetupForm ? (
         <form onSubmit={submitDestination} noValidate>
           <p className={styles.fieldHint}>
-            {addingContact
-              ? 'Verify the second contact and you will be able to switch between them at sign-in.'
-              : `We will send you a code to confirm the ${method === 'EMAIL' ? 'address' : 'number'}. Two-step verification only turns on once that code is verified.`}
+            {contactForm === 'change' ? (
+              <>
+                We will send a code to the new {method === 'EMAIL' ? 'address' : 'number'}.
+                {replacing && <> Your current one ({replacing}) keeps working until you confirm it.</>}
+              </>
+            ) : contactForm === 'add' ? (
+              'Verify the second contact and you will be able to switch between them at sign-in.'
+            ) : (
+              `We will send you a code to confirm the ${method === 'EMAIL' ? 'address' : 'number'}. Two-step verification only turns on once that code is verified.`
+            )}
           </p>
 
-          {/* Only the missing contact can be added; the verified one is not offered. */}
-          {(!user?.otp_enabled || (missingMethod && addingContact)) && (
+          {/* Choosing a channel makes sense when nothing is verified yet or when
+              adding the missing one — a change is already aimed at one contact. */}
+          {(!user?.otp_enabled || contactForm === 'add') && (
             <div className={styles.field}>
               <span className={styles.label}>Send the code by</span>
               <div className={styles.themeRow} role="radiogroup" aria-label="Delivery method">
@@ -438,12 +465,12 @@ export function SettingsModal({ open, onClose }: SettingsModalProps) {
           )}
 
           <div className={styles.footer}>
-            {addingContact && (
+            {contactForm !== null && (
               <button
                 type="button"
                 className={styles.cancel}
                 onClick={() => {
-                  setAddingContact(false)
+                  setContactForm(null)
                   setMethod(missingMethod ?? 'SMS')
                 }}
                 disabled={sendCode.isPending}
@@ -480,10 +507,38 @@ export function SettingsModal({ open, onClose }: SettingsModalProps) {
               <span className={styles.statusOn}>On</span>
               <> · codes go by {otpMethodLabel(user.preferred_otp_method)}</>
             </p>
-            <p className={styles.fieldHint}>
-              {user.mobile_number && <>Mobile: {displayMobile(user.mobile_number)}. </>}
-              {user.email && <>Email: {user.email}.</>}
-            </p>
+            <ul className={styles.contacts}>
+              {user.mobile_number && (
+                <li className={styles.contact}>
+                  <span className={styles.contactValue}>
+                    <span className={styles.contactLabel}>Mobile</span>
+                    {displayMobile(user.mobile_number)}
+                  </span>
+                  <button
+                    type="button"
+                    className={styles.contactAction}
+                    onClick={() => changeContact('SMS')}
+                  >
+                    Change
+                  </button>
+                </li>
+              )}
+              {user.email && (
+                <li className={styles.contact}>
+                  <span className={styles.contactValue}>
+                    <span className={styles.contactLabel}>Email</span>
+                    {user.email}
+                  </span>
+                  <button
+                    type="button"
+                    className={styles.contactAction}
+                    onClick={() => changeContact('EMAIL')}
+                  >
+                    Change
+                  </button>
+                </li>
+              )}
+            </ul>
 
             {canSwitchDefault ? (
               <div className={styles.field}>
@@ -530,7 +585,7 @@ export function SettingsModal({ open, onClose }: SettingsModalProps) {
                   className={styles.cancel}
                   onClick={() => {
                     setMethod(missingMethod)
-                    setAddingContact(true)
+                    setContactForm('add')
                   }}
                   disabled={turnOff.isPending}
                 >

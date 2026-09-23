@@ -229,6 +229,53 @@ async def test_email_failure_leaves_the_account_untouched(
     assert me.json()["email"] is None
 
 
+async def test_an_address_another_account_verified_is_refused_before_sending(
+    client: AsyncClient,
+    email: RecordingEmailService,
+    sms: RecordingSmsService,
+    clock: FakeClock,
+) -> None:
+    """UK_USERS_EMAIL: an address belongs to one account."""
+    headers_alice, _alice = await _headers(client, "alice")
+    await _enable(client, headers_alice, clock, email)
+    headers_bob, _bob = await _headers(client, "bob")
+    sent_before = len(email.sent)
+
+    response = await client.post(
+        "/me/otp/enable", json={"method": "EMAIL", "email": EMAIL}, headers=headers_bob
+    )
+
+    assert response.status_code == 409
+    assert response.json() == {"detail": "That email address is already linked to another account"}
+    assert len(email.sent) == sent_before  # nothing was sent
+
+
+async def test_a_verified_address_can_be_replaced_by_verifying_a_new_one(
+    client: AsyncClient, email: RecordingEmailService, clock: FakeClock
+) -> None:
+    """Changing the address is the same act as verifying one: confirm the new one."""
+    headers, _user = await _headers(client)
+    await _enable(client, headers, clock, email)  # EMAIL
+    replacement = "new-address@example.com"
+
+    start = await client.post(
+        "/me/otp/enable", json={"method": "EMAIL", "email": replacement}, headers=headers
+    )
+    assert start.status_code == 200, start.text
+    me = await client.get("/me", headers=headers)
+    assert me.json()["email"] == EMAIL  # untouched until the new one is confirmed
+
+    confirmed = await client.post(
+        "/me/otp/verify",
+        json={"challenge_id": start.json()["challenge_id"], "code": email.last_code},
+        headers=headers,
+    )
+
+    assert confirmed.status_code == 200, confirmed.text
+    assert confirmed.json()["email"] == replacement
+    assert confirmed.json()["preferred_otp_method"] == "EMAIL"  # a change, not a switch
+
+
 async def test_email_unconfigured_answers_503(client: AsyncClient) -> None:
     """The real service must refuse to send without a key — and never call out."""
     app.dependency_overrides.pop(get_email_service, None)
@@ -887,8 +934,18 @@ async def test_logs_never_contain_the_code_or_the_recipient(
     code = code_in_html(captured[0]["html"])
     logs = "\n".join(record.getMessage() + str(record.__dict__) for record in caplog.records)
     assert code not in logs
-    assert EMAIL not in logs
     assert EMAIL_CONFIGURED_SETTINGS.resend_api_key not in logs
+    # The address, though, is scoped to this application's own loggers. Looking a
+    # recipient up by address necessarily puts it in the SQL statement, and
+    # SQLAlchemy only echoes statements when a test (or an operator) turns that on —
+    # this suite does not run with echo. What must never happen is the *app* writing
+    # it, so that is what is asserted.
+    app_logs = "\n".join(
+        record.getMessage() + str(record.__dict__)
+        for record in caplog.records
+        if record.name.startswith("app.")
+    )
+    assert EMAIL not in app_logs
 
 
 async def test_a_registered_account_starts_on_sms(client: AsyncClient) -> None:

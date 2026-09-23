@@ -28,13 +28,16 @@ class User(Base):
     updated_at: Mapped[datetime] = mapped_column(DateTime)
     last_login_at: Mapped[datetime | None] = mapped_column(DateTime)
     # Verified mobile as the 10-digit local Iranian number (NUMBER(10,0) in
-    # Oracle — the +98 form is presentation only and does not fit).
-    mobile_number: Mapped[int | None] = mapped_column(Integer)
+    # Oracle — the +98 form is presentation only and does not fit). Unique
+    # (UK_USERS_MOBILE_NUMBER): one account per number, so two accounts can never
+    # receive each other's codes.
+    mobile_number: Mapped[int | None] = mapped_column(Integer, unique=True)
     # 0/1 flag, NOT NULL DEFAULT 0 in Oracle: 1 = a code is required at login.
     otp_enabled: Mapped[int] = mapped_column(Integer, server_default=text("0"))
     # Verified email address, stored canonical (lowercase ASCII) — see
     # app/core/email.py. Only ever written after a code sent to it came back.
-    email: Mapped[str | None] = mapped_column(String(200))
+    # Unique (UK_USERS_EMAIL) for the same reason as the mobile number.
+    email: Mapped[str | None] = mapped_column(String(200), unique=True)
     # Which channel login codes go to: 'SMS' | 'EMAIL' (app/core/contact.py). The
     # column is nullable with no default, so NULL means SMS — every account that
     # enabled two-step verification before email existed stays an SMS account.

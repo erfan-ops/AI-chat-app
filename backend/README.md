@@ -223,6 +223,11 @@ generation, expiry, attempt and rate-limit logic either way; only the provider d
   stored (`USERS.MOBILE_NUMBER` / `USERS.EMAIL`) and `USERS.OTP_ENABLED` set. Verifying a
   *first* contact also makes it the default method; verifying a second one later does not
   move it.
+- **Changing a contact** is the same two calls with a different destination: the new one
+  is verified before it replaces the old, so the current number or address keeps working
+  until the new one is confirmed. A contact belongs to one account
+  (`UK_USERS_MOBILE_NUMBER` / `UK_USERS_EMAIL`), so a destination another account already
+  verified is refused with `409` — checked before the code is sent.
 - **Logging in** with two-step on returns `otp_required` + `challenge_id`, the
   `delivery_method` used, and `alternative_method` when the other channel is usable.
   `POST /auth/login/otp/method` re-sends to that other channel **for this login only** —

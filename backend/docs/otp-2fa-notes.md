@@ -21,9 +21,17 @@ third channel means adding a service and one branch, not a second OTP implementa
   the preference alone, so adding an email never silently moves where codes go.
 - `PATCH /me {preferred_otp_method}` only accepts a channel with a verified destination,
   for the same reason.
-- **Email is not unique and is never an identifier.** There is no UK on `EMAIL`; two
-  accounts may verify the same address. Mirroring `MOBILE_NUMBER`, which has the same
-  property. A unique constraint would also turn registration into an enumeration oracle.
+- **A contact belongs to one account.** `UK_USERS_MOBILE_NUMBER` and `UK_USERS_EMAIL`
+  (added by the project owner on 2026-09-24) mean two accounts can never verify the same
+  number or address, so neither can receive the other's codes. The check runs *before*
+  the send, so no code goes out to a contact that could not be attached, and a lost race
+  surfaces as `409` rather than a 500. It does tell an authenticated caller that an
+  address is already in use — that is inherent to enforcing uniqueness at verify time.
+- **Changing a contact is verifying a new one.** `/me/otp/enable` + `/me/otp/verify` with
+  a different destination replaces the stored one for that method and leaves
+  `PREFERRED_OTP_METHOD` alone — swapping a number is not a change of channel. Nothing is
+  written until the new contact answers a code, so the old one keeps receiving codes until
+  then; and once replaced, the old value is free for another account.
 - Addresses are stored **canonical: lowercase, ASCII only**. `VARCHAR2` uses byte
   semantics, so a longer internationalized (EAI) address could exceed the column in bytes
   even when it fits in characters — the same reasoning that forces ASCII digits in
@@ -192,8 +200,10 @@ consequences:
   first code on that channel. The other channel is immediately available.
 - `PATCH /me` cannot *clear* `default_model_id` (its schema treats `null` as "not
   provided"), so a default model can be changed but not removed.
-- No per-number or per-address uniqueness: neither `MOBILE_NUMBER` nor `EMAIL` has a
-  unique constraint, so two accounts can verify the same handset or inbox.
+- `MOBILE_NUMBER` and `EMAIL` are unique per account, so a contact can be attached to
+  one account only. Uniqueness is enforced on the *verified* value: an unverified address
+  can still be typed into the enable form (the code is sent before anything is written),
+  which is what the anti-flooding note above is about.
 - Switching method invalidates the code already delivered on the other channel. That is
   inherent to keeping exactly one live challenge per user (which is what bounds the
   attempt budget); the UI clears the code input and names the new destination so the
