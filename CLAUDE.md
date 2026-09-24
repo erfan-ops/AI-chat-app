@@ -84,7 +84,10 @@ frontend/ React 19 SPA: feature folders, TanStack Query for server state, SSE vi
 - **Settings & two-step verification**: the sidebar footer opens
   `features/settings/SettingsModal` — username (unique across accounts; the API answers
   `409` when taken, and tokens survive a rename since they carry the user id), display
-  name, default model, SMS two-step verification. When 2FA is on, `POST /auth/login`
+  name, default model, two-step verification by SMS, email or an authenticator app
+  (the last renders the server's `otpauth://` URI with `react-qr-code`; the secret is
+  held in component state only — never in persistent storage — and is dropped when the
+  step ends). When 2FA is on, `POST /auth/login`
   returns `otp_required` instead of a token and `AuthPage` switches to a code prompt;
   the session user is refreshed through `authSession.updateSessionUser`. Rejections
   there are 400-level on purpose — the client signs out on any authenticated 401. The

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from pydantic import BaseModel, Field, field_validator, model_validator
 
-from app.core.contact import DEFAULT_OTP_METHOD, OtpMethod
+from app.core.contact import SentOtpMethod
 from app.core.email import MAX_EMAIL_LENGTH, normalize_email
 from app.core.mobile import normalize_mobile
 
@@ -18,7 +18,7 @@ class OtpEnableRequest(BaseModel):
     before email existed still means exactly what it used to.
     """
 
-    method: OtpMethod = DEFAULT_OTP_METHOD
+    method: SentOtpMethod = "SMS"
     mobile_number: str | None = Field(default=None, min_length=1, max_length=32)
     email: str | None = Field(default=None, min_length=3, max_length=MAX_EMAIL_LENGTH)
 
@@ -56,10 +56,24 @@ class OtpVerifyRequest(BaseModel):
     code: str = Field(min_length=6, max_length=6, pattern=r"[0-9]{6}")
 
 
+class TotpEnrollRead(BaseModel):
+    """Body of POST /me/totp/enable.
+
+    The secret and the URI are shown once, to the authenticated owner, so they can be
+    scanned or typed into an authenticator app. Nothing is enabled yet: the code that
+    app produces has to come back through `POST /me/otp/verify`.
+    """
+
+    challenge_id: str
+    secret: str = Field(description="Base32 secret, for entering by hand")
+    otpauth_uri: str = Field(description="otpauth:// URI for the QR code")
+    code_expires_in_seconds: int = Field(description="How long the enrolment stays open")
+
+
 class OtpChallengeRead(BaseModel):
     """A code has been sent; the challenge id ties the next call to this attempt."""
 
     challenge_id: str
     code_expires_in_seconds: int = Field(description="Lifetime of the code, in seconds")
-    method: OtpMethod = Field(description="Channel the code was sent through")
+    method: SentOtpMethod = Field(description="Channel the code was sent through")
     destination_hint: str = Field(description="Masked address the code was sent to")

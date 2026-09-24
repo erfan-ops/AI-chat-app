@@ -16,6 +16,8 @@ dependencies = [
     "httpx>=0.27",
     "cloudinary>=1.46.2",
     "resend[async]>=2.47.0",
+    "pyotp>=2.10.0",
+    "ntplib>=0.4.0",
 ]
 
 [project.optional-dependencies]

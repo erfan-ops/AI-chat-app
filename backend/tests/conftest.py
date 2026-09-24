@@ -10,6 +10,7 @@ from __future__ import annotations
 import asyncio
 import json
 from collections.abc import AsyncIterator
+from types import SimpleNamespace
 from typing import Any
 
 import pytest_asyncio
@@ -34,6 +35,8 @@ from app.api.dependencies import (
     get_session_factory,
     get_settings,
     get_sms_service,
+    get_time_service,
+    get_totp_service,
 )
 from app.core.config import Settings
 from app.core.time import utcnow
@@ -46,6 +49,8 @@ from app.db.models.user import ADMIN_ROLE, User
 from app.exceptions import ServiceUnavailableError
 from app.main import app
 from app.services.otp_service import OtpService
+from app.services.time_service import TimeService
+from app.services.totp_service import TotpService
 
 TEST_SETTINGS = Settings(
     jwt_secret="test-secret-key-for-testing-only-0123456789",
@@ -68,6 +73,68 @@ TEST_SETTINGS = Settings(
 )
 
 TEST_PASSWORD = "password123"
+
+
+class FakeTimeService:
+    """The application clock the tests control.
+
+    TOTP is time-based, so every test that touches it needs to say what time it is —
+    and none of them may reach an NTP server.
+    """
+
+    def __init__(self, *, local: float = 1_750_000_000.0, offset: float = 0.0) -> None:
+        self.local = local
+        self.offset_value = offset
+        self.usable = True
+
+    def get_current_unix_time(self) -> float:
+        return self.local + self.offset_value
+
+    @property
+    def synchronized(self) -> bool:
+        return True
+
+    @property
+    def offset(self) -> float:
+        return self.offset_value
+
+    @property
+    def is_usable(self) -> bool:
+        return self.usable
+
+    @property
+    def offset_age_seconds(self) -> float:
+        """Nothing here ages: ``usable`` is set by the test, not by a clock."""
+        return 0.0
+
+    @property
+    def status(self) -> str:
+        return "synchronized" if self.usable else "stale"
+
+    def advance(self, seconds: float) -> None:
+        self.local += seconds
+
+
+class FakeNtpClient:
+    """Stands in for ``ntplib.NTPClient``: records calls, never opens a socket.
+
+    ``calls`` is what most tests assert on — a TOTP verification must not add to it.
+    """
+
+    def __init__(self, *, offset: float = 0.0, delay: float = 0.01, error: Exception | None = None):
+        self.offset = offset
+        self.delay = delay
+        self.error = error
+        self.calls = 0
+        self.requests: list[dict[str, Any]] = []
+
+    def request(self, host: str, version: int = 2, port: str = "ntp", timeout: float = 5) -> Any:
+        self.calls += 1
+        self.requests.append({"host": host, "version": version, "port": port, "timeout": timeout})
+        if self.error is not None:
+            raise self.error
+        return SimpleNamespace(offset=self.offset, delay=self.delay)
+
 
 # The scripted provider emulates an AI that follows the structured-reply
 # contract: a JSON envelope streamed in pieces. The API receives the raw
@@ -279,6 +346,23 @@ async def otp_service(clock: FakeClock) -> OtpService:
     """The challenge store requests actually use, sharing one clock per test."""
     service = OtpService(TEST_SETTINGS, clock=clock)
     app.dependency_overrides[get_otp_service] = lambda: service
+    return service
+
+
+@pytest_asyncio.fixture(autouse=True)
+async def time_service() -> FakeTimeService:
+    """A fixed, controllable clock for every test — and no NTP traffic, ever."""
+    service = FakeTimeService()
+    app.dependency_overrides[get_time_service] = lambda: service
+    yield service
+    TimeService.reset_instance()
+
+
+@pytest_asyncio.fixture(autouse=True)
+async def totp_service(time_service: FakeTimeService) -> TotpService:
+    """The real service on the fake clock, so its codes are reproducible."""
+    service = TotpService(time_service)  # type: ignore[arg-type]
+    app.dependency_overrides[get_totp_service] = lambda: service
     return service
 
 

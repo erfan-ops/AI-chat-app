@@ -82,15 +82,16 @@ src/
                            #   ToastHost (+ toastStore), inline SVG icon set
   features/
     auth/AuthPage          # sign-in / account creation (password typed twice), plus the
-                           #   code step for accounts
-                           #   with two-step verification (and the switch to the other
-                           #   delivery method)
+                           #   code step for accounts with two-step verification (a code we
+                           #   sent or one from an authenticator app, and the switch to
+                           #   another method)
     conversations/         # sidebar, list items (rename/delete), infinite list query
     characters/            # cached character lookup (avatars), create + profile dialogs,
                            #   avatar picker (crop → upload to Cloudinary)
     models/                # shared ['models'] query (picker + settings)
     settings/SettingsModal # profile (username, display name, default model), theme,
-                           #   two-step verification (SMS or email, default method)
+                           #   two-step verification (SMS, email or an authenticator app —
+                           #   QR enrolment, default method, verified methods)
     personas/              # user personas: cached list + create-persona form modal
     newConversation/       # step-by-step new-chat wizard: character → model → persona,
                            #   with a clickable stepper (one step's UI at a time)
@@ -124,14 +125,18 @@ its family at the front of the `body` stack.
   A `401` clears the local session and returns the user to the sign-in screen, and
   token expiry follows the API's `expires_in` (minutes). When the account has
   two-step verification on, `POST /auth/login` returns `otp_required` + a
-  `challenge_id` instead of a token, the sign-in screen switches to a code prompt,
-  and the token only arrives from `POST /auth/login/otp`. A wrong or expired code is
+  `challenge_id` instead of a token, the sign-in screen switches to a code prompt —
+  worded for a code we sent or one from the user's authenticator app — and the token
+  only arrives from `POST /auth/login/otp`. A wrong or expired code is
   a 400 — never a 401, because this client would treat that as an expired session and
   sign the user out.
 - **Settings**: the sidebar footer opens a settings dialog — username, display name and
   default model (`PATCH /me`), password (`POST /me/password`, with the new password typed
   twice and matched in the form before it is sent), theme, and two-step verification
-  (`/me/otp/*`). The
+  (`/me/otp/*`, `/me/totp/enable`). Enrolling an authenticator renders the server's
+  `otpauth://` URI as a QR code with `react-qr-code` (plus the key for entering by hand),
+  and both are held in component state only — never in `localStorage`, and dropped when
+  the step ends. The
   username field only sends a value when it actually changed and is validated client-side
   to the API's rules; a name another account already holds comes back as a `409`, which
   the dialog reports inline (it is never a 401, so the user is not signed out). A

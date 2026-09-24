@@ -19,6 +19,7 @@ from app.api.dependencies import (
     get_otp_audit,
     get_otp_delivery_service,
     get_otp_service,
+    get_totp_service,
 )
 from app.db.database import get_db
 from app.db.models.user import User
@@ -27,6 +28,7 @@ from app.schemas.users import UserRead
 from app.services.otp_audit import OtpAudit
 from app.services.otp_delivery import OtpDeliveryService
 from app.services.otp_service import OtpService
+from app.services.totp_service import TotpService
 from app.services.two_factor_service import TwoFactorService
 
 router = APIRouter(tags=["users"])
@@ -76,10 +78,11 @@ async def start_otp_enable(
     response_model=UserRead,
     summary="Confirm the code and enable two-step verification",
     description=(
-        "Verifies the code sent by `/me/otp/enable`, stores the verified contact and "
-        "turns two-step verification on (a first-time enable also makes that contact "
-        "the default delivery method). An invalid or expired code is rejected with "
-        "400 and leaves the account unchanged."
+        "Verifies the code from `/me/otp/enable` or `/me/totp/enable`, stores the "
+        "verified contact (an authenticator secret is already stored) and turns "
+        "two-step verification on — a first-time enable also makes that method the "
+        "default. An invalid or expired code is rejected with 400 and leaves the "
+        "account unchanged."
     ),
 )
 async def verify_otp_enable(
@@ -88,6 +91,7 @@ async def verify_otp_enable(
     db: Annotated[AsyncSession, Depends(get_db)],
     otp: Annotated[OtpService, Depends(get_otp_service)],
     audit: Annotated[OtpAudit, Depends(get_otp_audit)],
+    totp: Annotated[TotpService, Depends(get_totp_service)],
 ) -> User:
     return await two_factor_service.confirm_enable(
         db,
@@ -96,6 +100,7 @@ async def verify_otp_enable(
         code=body.code,
         otp=otp,
         audit=audit,
+        totp=totp,
     )
 
 

@@ -5,16 +5,18 @@ Run with: uv run uvicorn app.main:app --host 0.0.0.0 --port 8000
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import time
 from collections.abc import AsyncGenerator
-from contextlib import asynccontextmanager
+from contextlib import asynccontextmanager, suppress
 
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from starlette.types import ASGIApp, Message, Receive, Scope, Send
 
+from app.api.dependencies import get_time_service
 from app.api.router import api_router
 from app.core.config import get_settings
 from app.core.logging import configure_logging, get_logger, structured
@@ -28,7 +30,22 @@ async def lifespan(_app: FastAPI) -> AsyncGenerator[None]:
     settings = get_settings()
     configure_logging(settings.log_level)
     logger.info("starting %s (%s env)", settings.app_name, settings.app_env)
+
+    # The clock authenticator codes are checked against. The task synchronizes once
+    # immediately and then keeps the offset fresh; if the server is unreachable the
+    # application still starts (chat does not depend on NTP) but TOTP verification
+    # refuses until a sync succeeds — see app/services/time_service.py.
+    time_service = get_time_service(settings)
+    stop_sync = asyncio.Event()
+    sync_task = asyncio.create_task(time_service.run(stop_sync))
+    logger.info("ntp synchronization started (server=%s)", settings.ntp_server)
+
     yield
+
+    stop_sync.set()
+    sync_task.cancel()
+    with suppress(asyncio.CancelledError):
+        await sync_task
     logger.info("shutting down %s", settings.app_name)
 
 
@@ -75,9 +92,10 @@ def create_app() -> FastAPI:
         title=settings.app_name,
         version="0.1.0",
         description=(
-            "Backend API for the AI chat application: authentication (including SMS "
-            "two-step verification), AI characters, conversations, messages, memories, "
-            "and streamed AI replies (SSE). "
+            "Backend API for the AI chat application: authentication (including "
+            "two-step verification by SMS, email or an authenticator app), AI "
+            "characters, conversations, messages, memories, and streamed AI replies "
+            "(SSE). "
             "All endpoints except `/auth/register`, `/auth/login` and `/auth/login/otp` "
             "require a Bearer token."
         ),

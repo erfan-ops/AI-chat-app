@@ -75,6 +75,24 @@ class Settings(BaseSettings):
     resend_activation_subject: str = "Confirm your email address"
     # Seconds; the SDK's HTTPXClient takes an int.
     resend_timeout_seconds: int = Field(default=10, gt=0)
+    # NTP: the server's own clock is only trusted as far as this offset says. It is
+    # measured periodically (never per request) and kept in memory — see
+    # app/services/time_service.py.
+    ntp_server: str = "ntp.time.ir"
+    ntp_sync_interval_seconds: int = Field(default=3600, ge=30)
+    # How soon to try again after a failed sync, so an unreachable server is retried
+    # promptly without hammering it.
+    ntp_retry_interval_seconds: int = Field(default=60, ge=5)
+    ntp_timeout_seconds: float = Field(default=5.0, gt=0)
+    # A round trip slower than this makes the offset too imprecise to trust.
+    ntp_max_delay_seconds: float = Field(default=1.0, gt=0)
+    # Once the offset is older than this, authenticator codes are no longer verified
+    # (503) rather than being checked against a clock nobody has confirmed.
+    ntp_max_offset_age_seconds: int = Field(default=21600, ge=60)
+    # Authenticator (TOTP) enrolment: how long the scanned secret stays valid while
+    # the user installs an app and types a code.
+    totp_enroll_ttl_seconds: int = Field(default=600, ge=60)
+
     # Code lifetime, resend cooldown, per-challenge attempt cap and daily send cap.
     # The cooldown is a security control, not a nicety: without it a password
     # holder could request a fresh code per guess and the attempt cap would be moot.

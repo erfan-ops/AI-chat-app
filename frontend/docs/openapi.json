@@ -2,7 +2,7 @@
  "openapi": "3.1.0",
  "info": {
   "title": "AI Chat API",
-  "description": "Backend API for the AI chat application: authentication (including SMS two-step verification), AI characters, conversations, messages, memories, and streamed AI replies (SSE). All endpoints except `/auth/register`, `/auth/login` and `/auth/login/otp` require a Bearer token.",
+  "description": "Backend API for the AI chat application: authentication (including two-step verification by SMS, email or an authenticator app), AI characters, conversations, messages, memories, and streamed AI replies (SSE). All endpoints except `/auth/register`, `/auth/login` and `/auth/login/otp` require a Bearer token.",
   "version": "0.1.0"
  },
  "paths": {
@@ -146,7 +146,7 @@
      "auth"
     ],
     "summary": "Send this login's code through the other delivery method",
-    "description": "Sends a fresh code for the same login through `method` instead of the channel the first code used, and returns the new `challenge_id`. This is a choice for this login only: the account's saved default is untouched.\n\nThe destination is always the one stored on the account \u2014 the request names a channel, never an address. Rejections are 400-level (never 401), and 503 when the account has no verified contact for that channel.",
+    "description": "Sends a fresh code for the same login through `method` instead of the channel the first code used, and returns the new `challenge_id`. This is a choice for this login only: the account's saved default is untouched.\n\n`method` may be `TOTP`, in which case nothing is sent: the challenge is for a code from the account's authenticator app, and no SMS or email goes out.\n\nThe destination is always the one stored on the account \u2014 the request names a channel, never an address. Rejections are 400-level (never 401), and 503 when the account has no verified contact for that channel.",
     "operationId": "login_switch_otp_method_auth_login_otp_method_post",
     "requestBody": {
      "content": {
@@ -365,7 +365,7 @@
      "users"
     ],
     "summary": "Confirm the code and enable two-step verification",
-    "description": "Verifies the code sent by `/me/otp/enable`, stores the verified contact and turns two-step verification on (a first-time enable also makes that contact the default delivery method). An invalid or expired code is rejected with 400 and leaves the account unchanged.",
+    "description": "Verifies the code from `/me/otp/enable` or `/me/totp/enable`, stores the verified contact (an authenticator secret is already stored) and turns two-step verification on \u2014 a first-time enable also makes that method the default. An invalid or expired code is rejected with 400 and leaves the account unchanged.",
     "operationId": "verify_otp_enable_me_otp_verify_post",
     "requestBody": {
      "content": {
@@ -421,6 +421,33 @@
        "application/json": {
         "schema": {
          "$ref": "#/components/schemas/UserRead"
+        }
+       }
+      }
+     }
+    },
+    "security": [
+     {
+      "HTTPBearer": []
+     }
+    ]
+   }
+  },
+  "/me/totp/enable": {
+   "post": {
+    "tags": [
+     "users"
+    ],
+    "summary": "Start enrolling an authenticator app",
+    "description": "Generates a TOTP secret, stores it, and returns the `otpauth://` URI (for a QR code) plus the Base32 secret for entering by hand.\n\n**Two-step verification is not enabled by this call.** Only a correct code from the authenticator turns it on \u2014 see `POST /me/otp/verify` with the returned `challenge_id`. Enrolling again replaces the previous secret.",
+    "operationId": "start_totp_enable_me_totp_enable_post",
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/TotpEnrollRead"
         }
        }
       }
@@ -2034,7 +2061,8 @@
       "type": "string",
       "enum": [
        "SMS",
-       "EMAIL"
+       "EMAIL",
+       "TOTP"
       ],
       "title": "Method"
      }
@@ -2214,6 +2242,31 @@
        }
       ],
       "title": "Reply To Id"
+     },
+     "client_timezone": {
+      "anyOf": [
+       {
+        "type": "string",
+        "maxLength": 64
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Client Timezone"
+     },
+     "client_utc_offset_minutes": {
+      "anyOf": [
+       {
+        "type": "integer",
+        "maximum": 840.0,
+        "minimum": -840.0
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Client Utc Offset Minutes"
      }
     },
     "type": "object",
@@ -2221,7 +2274,7 @@
      "content"
     ],
     "title": "MessageCreate",
-    "description": "Body for POST /conversations/{id}/messages (starts a streamed AI reply)."
+    "description": "Body for POST /conversations/{id}/messages (starts a streamed AI reply).\n\n``client_timezone`` / ``client_utc_offset_minutes`` describe the *sender's* clock\n(the browser knows both), so the model can be told what time it is where the user\nis. They are optional: without them the AI sees UTC timestamps only, exactly as\nbefore. Both are treated as untrusted text \u2014 see app/ai/context.py, which strips\nanything unusable rather than failing the message over it."
    },
    "MessageRead": {
     "properties": {
@@ -2611,7 +2664,8 @@
       "type": "string",
       "enum": [
        "SMS",
-       "EMAIL"
+       "EMAIL",
+       "TOTP"
       ],
       "title": "Delivery Method",
       "description": "Channel the code was sent through"
@@ -2622,7 +2676,8 @@
         "type": "string",
         "enum": [
          "SMS",
-         "EMAIL"
+         "EMAIL",
+         "TOTP"
         ]
        },
        {
@@ -2913,6 +2968,38 @@
     "title": "RegisterRequest",
     "description": "Body for POST /auth/register."
    },
+   "TotpEnrollRead": {
+    "properties": {
+     "challenge_id": {
+      "type": "string",
+      "title": "Challenge Id"
+     },
+     "secret": {
+      "type": "string",
+      "title": "Secret",
+      "description": "Base32 secret, for entering by hand"
+     },
+     "otpauth_uri": {
+      "type": "string",
+      "title": "Otpauth Uri",
+      "description": "otpauth:// URI for the QR code"
+     },
+     "code_expires_in_seconds": {
+      "type": "integer",
+      "title": "Code Expires In Seconds",
+      "description": "How long the enrolment stays open"
+     }
+    },
+    "type": "object",
+    "required": [
+     "challenge_id",
+     "secret",
+     "otpauth_uri",
+     "code_expires_in_seconds"
+    ],
+    "title": "TotpEnrollRead",
+    "description": "Body of POST /me/totp/enable.\n\nThe secret and the URI are shown once, to the authenticated owner, so they can be\nscanned or typed into an authenticator app. Nothing is enabled yet: the code that\napp produces has to come back through `POST /me/otp/verify`."
+   },
    "UploadSignatureRead": {
     "properties": {
      "signature": {
@@ -3036,10 +3123,16 @@
       "type": "string",
       "enum": [
        "SMS",
-       "EMAIL"
+       "EMAIL",
+       "TOTP"
       ],
       "title": "Preferred Otp Method",
       "default": "SMS"
+     },
+     "authenticator_enrolled": {
+      "type": "boolean",
+      "title": "Authenticator Enrolled",
+      "default": false
      }
     },
     "type": "object",
@@ -3103,7 +3196,8 @@
         "type": "string",
         "enum": [
          "SMS",
-         "EMAIL"
+         "EMAIL",
+         "TOTP"
         ]
        },
        {

@@ -12,6 +12,7 @@ from app.api.routes import (
     messages,
     otp,
     personas,
+    totp,
     users,
 )
 
@@ -19,6 +20,7 @@ api_router = APIRouter()
 api_router.include_router(auth.router)
 api_router.include_router(users.router)
 api_router.include_router(otp.router)
+api_router.include_router(totp.router)
 api_router.include_router(personas.router)
 api_router.include_router(characters.router)
 api_router.include_router(cloudinary.router)

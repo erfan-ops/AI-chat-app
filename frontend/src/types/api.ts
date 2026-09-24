@@ -26,6 +26,9 @@ export interface User {
   otp_enabled: boolean
   /** Channel login codes go to by default; a login may temporarily use the other. */
   preferred_otp_method: OtpMethod
+  /** Whether an authenticator app is enrolled, so the method can be offered.
+   *  The answer only — the server never sends the secret itself. */
+  authenticator_enrolled: boolean
 }
 
 export interface RegisterRequest {
@@ -48,8 +51,13 @@ export interface LoginResponse {
   user: User
 }
 
-/** How a verification code reaches the user. */
-export type OtpMethod = 'SMS' | 'EMAIL'
+/** How a verification code reaches the user: one we send, or one their own
+ *  authenticator app generates. */
+export type OtpMethod = 'SMS' | 'EMAIL' | 'TOTP'
+
+/** The methods a code is *sent* through. TOTP sends nothing, so it has no
+ *  destination to collect or mask. */
+export type SentOtpMethod = 'SMS' | 'EMAIL'
 
 /** Returned by POST /auth/login when the account has two-step verification on:
  *  the password was right, but no token exists until the code is verified.
@@ -70,8 +78,8 @@ export interface OtpRequiredResponse {
 export interface OtpChallenge {
   challenge_id: string
   code_expires_in_seconds: number
-  /** Channel the code was sent through. */
-  method: OtpMethod
+  /** Channel the code was sent through — never TOTP, which sends nothing. */
+  method: SentOtpMethod
   /** Masked address the code was sent to, e.g. "+98 912 *** 6789" or
    *  "al***@example.com". Shown only where the user just typed it. */
   destination_hint: string
@@ -79,7 +87,7 @@ export interface OtpChallenge {
 
 /** Body for POST /me/otp/enable — the contact to verify, by SMS or by email. */
 export interface OtpEnableRequest {
-  method: OtpMethod
+  method: SentOtpMethod
   /** 10 digits without the +98 prefix; required when method is "SMS". */
   mobile_number?: string
   email?: string
@@ -89,6 +97,18 @@ export interface OtpEnableRequest {
 export interface LoginOtpMethodRequest {
   challenge_id: string
   method: OtpMethod
+}
+
+/** Returned by POST /me/totp/enable: an authenticator has been provisioned, and
+ *  a code from it is needed to finish. Two-step verification is *not* on yet.
+ *  Both values are shown once, to the signed-in owner, and are never stored. */
+export interface TotpEnrollment {
+  challenge_id: string
+  /** Base32 secret, for entering into the app by hand. */
+  secret: string
+  /** otpauth:// URI the QR code encodes. */
+  otpauth_uri: string
+  code_expires_in_seconds: number
 }
 
 export interface OtpVerifyRequest {

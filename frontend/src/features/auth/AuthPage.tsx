@@ -185,13 +185,15 @@ export function AuthPage() {
               )}
 
               <p className={styles.otpHint}>
-                We sent a 6-digit code by {otpMethodLabel(challenge.delivery_method)}. It
-                expires in {Math.round(challenge.code_expires_in_seconds / 60)} minutes.
+                {challenge.delivery_method === 'TOTP'
+                  ? 'Enter the 6-digit code from your authenticator app.'
+                  : `We sent a 6-digit code by ${otpMethodLabel(challenge.delivery_method)}.`}{' '}
+                It expires in {Math.round(challenge.code_expires_in_seconds / 60)} minutes.
               </p>
 
               <div className={styles.field}>
                 <label htmlFor="auth-otp-code" className={styles.label}>
-                  Verification code
+                  {challenge.delivery_method === 'TOTP' ? 'Authenticator code' : 'Verification code'}
                 </label>
                 <input
                   id="auth-otp-code"
@@ -237,9 +239,11 @@ export function AuthPage() {
                 >
                   {switchDelivery.isPending ? (
                     <>
-                      <Spinner size={15} label="Sending code" />
-                      Sending…
+                      <Spinner size={15} label="Switching method" />
+                      Switching…
                     </>
+                  ) : challenge.alternative_method === 'TOTP' ? (
+                    'Use my authenticator app instead'
                   ) : (
                     `Send the code by ${otpMethodLabel(challenge.alternative_method)} instead`
                   )}

@@ -10,7 +10,7 @@ from dataclasses import dataclass
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import Settings
-from app.core.contact import OtpMethod
+from app.core.contact import OtpMethod, stored_secret
 from app.core.logging import get_logger, structured
 from app.core.security import PasswordManager, TokenManager
 from app.core.time import utcnow
@@ -28,6 +28,7 @@ from app.exceptions import (
 from app.services.otp_audit import OtpAudit
 from app.services.otp_delivery import OtpDeliveryService
 from app.services.otp_service import OtpService
+from app.services.totp_service import TotpService, totp_validator
 
 logger = get_logger("app.services.auth")
 
@@ -220,10 +221,23 @@ class AuthService:
         challenge_id: str,
         code: str,
         otp: OtpService,
+        totp: TotpService,
         audit: OtpAudit,
     ) -> LoginResult:
-        """Second step of a two-step login: consume the code, then issue the token."""
-        verified = otp.verify(challenge_id=challenge_id, code=code, purpose="login")
+        """Second step of a two-step login: consume the code, then issue the token.
+
+        The challenge says how the code must be checked: a code we sent is compared
+        against its hash, an authenticator code against the user's secret and the
+        corrected clock. Both go through the same single-use, attempt-capped path.
+        """
+        pending = otp.require_live(challenge_id, purpose="login")
+        validator = None
+        if pending.method == "TOTP":
+            owner = await UserRepository(db).get_by_id(pending.user_id)
+            validator = totp_validator(owner, totp)
+        verified = otp.verify(
+            challenge_id=challenge_id, code=code, purpose="login", validator=validator
+        )
         user = await UserRepository(db).get_by_id(verified.user_id)
         if user is None or user.status != ACTIVE_STATUS:
             raise ForbiddenError("Account is disabled")
@@ -259,6 +273,14 @@ class AuthService:
         the code the user already holds working.
         """
         chosen = method or delivery.default_method(user)
+        if chosen == "TOTP":
+            # An authenticator code is not sent anywhere: the challenge is opened and
+            # the user's own app produces the code. Same call either way, so a login
+            # that defaults to an authenticator and one that switched to it behave
+            # identically.
+            return await self._start_totp_login(
+                user, delivery=delivery, otp=otp, audit=audit, replaces=replaces
+            )
         if chosen is None or delivery.destination_for(user, chosen) is None:
             # Reachable only by editing the database, but it must not fall through
             # to a password-only login — that would silently drop the second factor.
@@ -295,6 +317,44 @@ class AuthService:
             alternative_method=delivery.alternative_method(user, chosen),
         )
 
+    async def _start_totp_login(
+        self,
+        user: User,
+        *,
+        delivery: OtpDeliveryService,
+        otp: OtpService,
+        audit: OtpAudit,
+        replaces: str | None = None,
+    ) -> OtpChallengeResult:
+        """Open an authenticator-code challenge: the user's app generates the code.
+
+        Nothing is sent — that is the whole point of this method — so there is no
+        destination to resolve and no provider that can fail. The challenge exists so
+        the attempt budget, expiry and single-use rules are the same as for a code we
+        send, and so the client has an id to complete the login with.
+        """
+        if not stored_secret(user.totp_secret):
+            # 2FA is on but no authenticator is enrolled: fail closed rather than
+            # fall back to another channel the user did not choose.
+            structured(
+                logger, logging.ERROR, "otp enabled without an authenticator", user_id=user.id
+            )
+            raise ServiceUnavailableError("Two-step verification is unavailable for this account")
+
+        challenge_id = otp.claim_totp(user_id=user.id, purpose="login")
+        otp.commit(challenge_id, replaces=replaces)
+        await audit.issued(
+            challenge=otp.require_live(challenge_id, purpose="login"),
+            method="TOTP",
+            ttl_seconds=otp.code_ttl_seconds,
+        )
+        return OtpChallengeResult(
+            challenge_id=challenge_id,
+            expires_in_seconds=otp.code_ttl_seconds,
+            method="TOTP",
+            alternative_method=delivery.alternative_method(user, "TOTP"),
+        )
+
     async def switch_otp_method(
         self,
         db: AsyncSession,
@@ -307,7 +367,9 @@ class AuthService:
     ) -> OtpChallengeResult:
         """Send the login code through ``method`` instead, for this login only.
 
-        The saved preference is never touched — this is a per-login choice. The
+        ``method`` may be an authenticator: nothing is sent in that case, and the
+        challenge that comes back is for a code from the user's own app. Either way
+        the saved preference is never touched — this is a per-login choice. The
         challenge the caller is holding is only invalidated once the replacement is
         actually in flight, so a switch that fails (no destination, provider down,
         cooldown) leaves their existing code working.

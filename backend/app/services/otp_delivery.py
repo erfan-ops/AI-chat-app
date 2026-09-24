@@ -13,7 +13,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from app.core.contact import OTP_METHODS, OtpMethod, Purpose, parse_otp_method
+from app.core.contact import OTP_METHODS, OtpMethod, Purpose, parse_otp_method, stored_secret
 from app.db.models.user import User
 from app.exceptions import ServiceUnavailableError
 from app.services.email_service import EmailService
@@ -40,7 +40,13 @@ class OtpDeliveryService:
         return self._email.is_configured if method == "EMAIL" else self._sms.is_configured
 
     def destination_for(self, user: User, method: OtpMethod) -> str | None:
-        """The user's verified contact for ``method``, or ``None`` if there is none."""
+        """The user's verified contact for ``method``, or ``None`` if there is none.
+
+        TOTP has no destination — nothing is sent — so it answers ``None`` rather than
+        falling through to another channel's contact.
+        """
+        if method == "TOTP":
+            return None
         if method == "EMAIL":
             return user.email or None
         # MOBILE_NUMBER is NUMBER(10): render it as the canonical 10-digit local
@@ -55,17 +61,25 @@ class OtpDeliveryService:
         """
         return parse_otp_method(user.preferred_otp_method)
 
+    def usable(self, user: User, method: OtpMethod) -> bool:
+        """Whether ``method`` can actually produce a code for this user right now.
+
+        A sent code needs a verified destination and a configured provider; an
+        authenticator code needs the shared secret that was enrolled.
+        """
+        if method == "TOTP":
+            return bool(stored_secret(user.totp_secret))
+        return bool(self.destination_for(user, method)) and self.is_configured(method)
+
     def alternative_method(self, user: User, method: OtpMethod) -> OtpMethod | None:
         """The *other* method, but only when it is genuinely usable right now.
 
-        Returns ``None`` when the user has no verified contact for it or its
-        provider is unconfigured, so a client is never offered a switch that could
-        only fail.
+        Returns ``None`` when the user has no verified contact for it, no authenticator
+        enrolled, or its provider is unconfigured — so a client is never offered a
+        switch that could only fail.
         """
         for candidate in OTP_METHODS:
-            if candidate == method:
-                continue
-            if self.destination_for(user, candidate) and self.is_configured(candidate):
+            if candidate != method and self.usable(user, candidate):
                 return candidate
         return None
 

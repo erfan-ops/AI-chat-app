@@ -36,6 +36,9 @@ class UserRead(BaseModel):
     otp_enabled: bool = False
     # Channel login codes go to. The column is nullable, so NULL reads as SMS.
     preferred_otp_method: OtpMethod = DEFAULT_OTP_METHOD
+    # Whether an authenticator app is enrolled — the answer, never the secret. A
+    # client needs it to offer the method; nothing here can produce a code.
+    authenticator_enrolled: bool = False
 
     @field_validator("mobile_number", mode="before")
     @classmethod

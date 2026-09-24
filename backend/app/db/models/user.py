@@ -7,6 +7,7 @@ from datetime import datetime
 from sqlalchemy import DateTime, ForeignKey, Integer, String, text
 from sqlalchemy.orm import Mapped, mapped_column
 
+from app.core.contact import stored_secret
 from app.db.database import Base
 
 # ROLE values. The DB default is ROLE_user; no endpoint ever writes ROLE.
@@ -38,12 +39,26 @@ class User(Base):
     # app/core/email.py. Only ever written after a code sent to it came back.
     # Unique (UK_USERS_EMAIL) for the same reason as the mobile number.
     email: Mapped[str | None] = mapped_column(String(200), unique=True)
-    # Which channel login codes go to: 'SMS' | 'EMAIL' (app/core/contact.py). The
+    # Authenticator (TOTP) shared secret, Base32, 32 characters — CHAR(32) in Oracle,
+    # which blank-pads, so it is stripped when read. Generated on enrolment and only
+    # trusted once a code from it has been verified; never returned by the API.
+    totp_secret: Mapped[str | None] = mapped_column(String(32))
+    # Which channel login codes go to: 'SMS' | 'EMAIL' | 'TOTP' (app/core/contact.py). The
     # column is nullable with no default, so NULL means SMS — every account that
     # enabled two-step verification before email existed stays an SMS account.
     preferred_otp_method: Mapped[str | None] = mapped_column(String(20))
     # Matches the DB default 'ROLE_user'; the app never inserts a value.
     role: Mapped[str] = mapped_column(String(20), server_default=text("'ROLE_user'"))
+
+    @property
+    def authenticator_enrolled(self) -> bool:
+        """Whether an authenticator app has a secret stored for this account.
+
+        The answer, never the secret: it exists so a client can offer the method
+        without being told anything it could use to generate a code. ``GET /me`` is
+        the only place it is exposed, and only to the account's owner.
+        """
+        return stored_secret(self.totp_secret) is not None
 
     @property
     def is_active(self) -> bool:

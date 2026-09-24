@@ -24,6 +24,8 @@ from app.services.otp_audit import OtpAudit
 from app.services.otp_delivery import OtpDeliveryService
 from app.services.otp_service import OtpService
 from app.services.sms_service import SmsService
+from app.services.time_service import TimeService
+from app.services.totp_service import TotpService
 
 bearer_scheme = HTTPBearer(auto_error=False, description="JWT access token from POST /auth/login")
 
@@ -68,6 +70,25 @@ def get_email_service(settings: Annotated[Settings, Depends(get_settings)]) -> E
     The ``Depends`` on ``settings`` matters here for the same reason as above.
     """
     return EmailService(settings)
+
+
+def get_time_service(
+    settings: Annotated[Settings, Depends(get_settings)],
+) -> TimeService:
+    """The application's corrected clock — one per process, since its offset is state.
+
+    Deliberately not cached here: ``TimeService.instance`` is the single owner of that
+    instance, so the clock the synchronization loop fills is the clock a request
+    reads, no matter how this is called. See ``TimeService.instance``.
+    """
+    return TimeService.instance(settings)
+
+
+def get_totp_service(
+    time_service: Annotated[TimeService, Depends(get_time_service)],
+) -> TotpService:
+    """Authenticator codes. Stateless; the clock is injected."""
+    return TotpService(time_service)
 
 
 def get_otp_audit(

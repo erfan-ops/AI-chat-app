@@ -9,6 +9,7 @@ import type {
   OtpVerifyRequest,
   PasswordChangeRequest,
   RegisterRequest,
+  TotpEnrollment,
   User,
   UserUpdate,
 } from '../types/api'
@@ -70,6 +71,15 @@ export function changePassword(request: PasswordChangeRequest): Promise<User> {
  *  {@link verifyOtpEnable}. */
 export function startOtpEnable(request: OtpEnableRequest): Promise<OtpChallenge> {
   return apiRequest<OtpChallenge>('/me/otp/enable', { method: 'POST', body: request })
+}
+
+/** Provision an authenticator app: generates and stores a secret and returns the
+ *  otpauth URI (for a QR code) plus the secret for entering by hand.
+ *
+ *  Nothing is enabled by this call — the code the app produces has to come back
+ *  through {@link verifyOtpEnable} first. Enrolling again replaces the secret. */
+export function startTotpEnable(): Promise<TotpEnrollment> {
+  return apiRequest<TotpEnrollment>('/me/totp/enable', { method: 'POST' })
 }
 
 /** Confirm the code: stores the verified contact and turns two-step on. */

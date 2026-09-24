@@ -20,7 +20,7 @@ class OtpLogRepository:
         user_id: int,
         purpose: str,
         method: str,
-        code_hash: str,
+        code_hash: str | None,
         created_at: datetime,
         expires_at: datetime,
     ) -> OtpLog:

@@ -1,15 +1,19 @@
-# Two-step verification (SMS / email OTP) — decisions, assumptions, open items
+# Two-step verification (SMS / email / authenticator) — decisions, assumptions, open items
 
 This file records the judgement calls behind the implementation, so that nothing
 here is mistaken for "verified behaviour" later.
 
 ## Delivery methods
 
-A code travels by **SMS** (SMS.ir) or **email** (Resend). `app/core/contact.py` owns the
-vocabulary — a *method* (`SMS` | `EMAIL`) and the *destination* it needs — and
+A code travels by **SMS** (SMS.ir) or **email** (Resend); a third method, **TOTP**, is
+not sent anywhere at all — the user's own authenticator app generates it.
+
+`app/core/contact.py` owns the vocabulary — a *method* (`SMS` | `EMAIL` | `TOTP`) and the
+*destination* it needs (`SentOtpMethod` is the subset that has one) — and
 `app/services/otp_delivery.py` is the only place that picks a provider. Everything else
-(generation, hashing, expiry, attempts, rate limits) is channel-agnostic, so adding a
-third channel means adding a service and one branch, not a second OTP implementation.
+(generation, hashing, expiry, attempts, rate limits) is method-agnostic, so a new channel
+means a new service and one branch, not a second OTP implementation; TOTP reuses the
+challenge machinery unchanged and differs only in *how* a code is judged.
 
 - `USERS.PREFERRED_OTP_METHOD` is **nullable with no DB default**, so NULL means `SMS`.
   Every account that enabled 2FA before email existed is an SMS account, with no data
@@ -37,6 +41,107 @@ third channel means adding a service and one branch, not a second OTP implementa
   even when it fits in characters — the same reasoning that forces ASCII digits in
   `normalize_mobile`. Case folding matters because Oracle comparisons are case-sensitive,
   and the "already enabled for this destination" check depends on it.
+
+## Authenticator apps (TOTP)
+
+Parameters are the ones every app assumes — **SHA1, 6 digits, 30-second period** — and are
+stated explicitly in `app/services/totp_service.py` rather than left to library defaults.
+`pyotp` does the cryptography; nothing here reimplements HMAC or the truncation step. The
+accepted window is the **previous, current and next period only** (`valid_window=1`, RFC
+6238's recommended drift allowance), which is also what the `otpauth://` URI implies when
+it omits `digits`/`period`/`algorithm`: those are the documented defaults, so an app that
+honours the standard and an app that ignores those parameters agree.
+
+**Enrolment is not enabling.** `POST /me/totp/enable` generates a secret, stores it, and
+returns the `otpauth://` URI plus the Base32 key once. `OTP_ENABLED` is untouched: a
+stored secret proves nothing until a code generated from it comes back, which is what
+`POST /me/otp/verify` checks. That confirmation goes through the *same* challenge as a
+sent code (same expiry, same attempt budget, single use) — the challenge itself says how a
+code must be judged, so the OTP service needs no second verification path.
+
+- **The secret comes from the library's CSPRNG** (`pyotp.random_base32()`): 20 random bytes
+  = 32 Base32 characters, exactly the width of `USERS.TOTP_SECRET`. The generator takes no
+  arguments at all, so nothing about the account (id, username, email, password, timestamp)
+  can influence it; tests assert both that signature and uniqueness across generations.
+- **No new column and no `TOTP_ENABLED` flag.** `TOTP_SECRET` (existing) holds the secret,
+  `OTP_ENABLED` (existing) says whether a second factor is required. "Has a secret" is
+  reported to the account's own owner as `authenticator_enrolled` — a derived boolean,
+  never the value — so a client can offer the method without being able to generate a code.
+- **`USERS.TOTP_SECRET` is `CHAR(32)`**, which Oracle blank-pads. `stored_secret()`
+  (`app/core/contact.py`) is its only reader; it strips, and treats an empty column as
+  "nothing enrolled" rather than as a value to check a code against.
+- **Enrolling again replaces the secret**, so a re-enrolment invalidates the previous app
+  entry instead of leaving two working ones: the old key stops working the moment the new
+  one is stored, and confirming the new key is what installs it.
+- **Nothing is sent for a TOTP challenge.** It never reaches `OtpDeliveryService.send`, so
+  no SMS or email goes out when a user switches to their authenticator, and the daily
+  *send* cap is not spent (`claim_totp(..., sends_message=False)`): an authenticator user
+  signing in from several devices must not be locked out of their own account by a limit
+  that exists to bound messages and their cost.
+- **The login-challenge cooldown still applies** (`throttled=True` when a login opens a
+  challenge): that is what keeps an attacker who already holds the password from grinding
+  five-code attempts at line speed. Enrolment passes `throttled=False` — it is neither a
+  login attempt nor a resend, and throttling it would delay the login that follows it.
+- **The secret and the URI are shown once and never persisted client-side.** They live in
+  React state for the length of the enrolment and are dropped when it ends; they are never
+  written to `localStorage`/`sessionStorage`, and no endpoint returns them again (`GET /me`
+  carries only `authenticator_enrolled`). They are never logged either: the only lines
+  about enrolment carry the user id and whether 2FA was already on.
+- **A user with an authenticator enrolled but a different default keeps that default.** As
+  with a second contact, adding a method does not move `PREFERRED_OTP_METHOD`; it can be
+  changed in settings, or chosen for a single login at `POST /auth/login/otp/method`.
+
+## The clock an authenticator code is checked against
+
+A TOTP code is a function of the current time, so the server's clock *is* part of
+verification. `app/services/time_service.py` keeps a corrected clock: it asks `NTP_SERVER`
+(default `ntp.time.ir`) for the time over NTP (UDP, via `ntplib` — not HTTP), stores the
+**offset** between that server and the local clock, and answers every later question from
+local time plus that offset. `TotpService` knows only about the corrected clock — it never
+mentions NTP — and verification is the only place the clock matters at all.
+
+- **No network on the hot path.** `get_current_unix_time()` is arithmetic; verification
+  never contacts the NTP server. A synchronization is a deliberate, periodic act. Measured
+  live: one synchronization at startup, then one per `NTP_SYNC_INTERVAL_SECONDS` (default
+  3600 s) — and a full enrolment-plus-login browser run added none. A test asserts exactly
+  that, counting calls on a fake client: one round trip for the whole test, and it is the
+  one the test asks for.
+- **The delay-adjusted calculation is the protocol's own** (`ntplib` implements
+  `((recv - orig) + (tx - dest)) / 2`), and a sample whose round trip exceeds
+  `NTP_MAX_DELAY_SECONDS` (default 1 s) is rejected: a slow answer bounds the sample's
+  accuracy to roughly half the delay.
+- **The offset lives in memory only.** It is a property of this process's clock, not of the
+  data, and it is learned again within an interval; no table is involved. Unlike the
+  in-process *challenges*, per-process clock state is harmless across workers: each process
+  measures the same machine clock.
+- **A failure never replaces a valid offset**, and the last good one is kept. Retries use a
+  shorter `NTP_RETRY_INTERVAL_SECONDS` (default 60) so an unreachable server is picked up
+  promptly without being hammered.
+- **Staleness is bounded and visible.** An offset older than `NTP_MAX_OFFSET_AGE_SECONDS`
+  (default 6 h) stops being trusted: `is_usable` goes false, `status` reads `stale` (versus
+  `synchronized` and `never_synchronized`), and TOTP verification **refuses with 503**
+  instead of checking a code against a clock nobody has confirmed. The refusal logs the
+  status and the offset's age — "wrong code" and "no trustworthy time" look identical to
+  the user, and only one of them is their problem. Age is measured on a **monotonic** clock,
+  so a wall-clock jump cannot make a stale offset look fresh.
+- **At startup, a failed sync is not a failed start.** Chat, password login and SMS/email
+  codes do not depend on NTP, so the application starts and the loop keeps retrying; only
+  authenticator verification is refused (503, with the log line above) until a sync
+  succeeds. Nothing pretends synchronization happened — `status` reports
+  `never_synchronized` and the log says so.
+- **One process, one clock** (`TimeService.instance`). The offset is mutable state, so the
+  instance the synchronization loop fills must be the instance a request reads. This was a
+  real defect during development, not a hypothetical: the dependency was `lru_cache`d on the
+  settings object, and because `functools` keys a positional call differently from a keyword
+  call, the loop synchronized one instance while FastAPI handed every request a second,
+  never-synchronized one — so every authenticator code was refused with a 503. A regression
+  test now asserts both call shapes return the same object.
+- **Assumption**: the server's clock is wrong by less than about one period. The offset
+  corrects *drift and skew*, not an arbitrarily wrong system clock; the application does not
+  set the OS clock, so a machine an hour off needs its clock fixed.
+- **Assumption**: `ntp.time.ir` is reachable from the deployment. It answered during
+  development (offset ≈ 0.28 s, round trip ≈ 30 ms); if it does not, authenticator
+  verification is unavailable until a reachable `NTP_SERVER` is configured.
 
 ## Swapping method during a login
 
@@ -196,8 +301,14 @@ consequences:
   can therefore turn the second factor off. Requiring the password here would be a
   reasonable hardening step; it was left out to match the requested behaviour.
 - The per-method send cooldown is shared by the enable and login flows, so a user who
-  has just enabled 2FA (or just added a contact) may be asked to wait a minute before the
-  first code on that channel. The other channel is immediately available.
+  has just enabled 2FA by SMS or email (or just added such a contact) may be asked to wait
+  a minute before the first code on that channel. The other channel is immediately
+  available. An authenticator is unaffected at enrolment and throttled at login — see the
+  TOTP section.
+- **A TOTP login challenge cannot be reissued within the cooldown minute.** It exists to
+  bound an attacker who already has the password to five attempts per minute, and it costs
+  a legitimate user little: the window accepts a code from any of three periods, and
+  retrying the *same* challenge is bounded only by the attempt budget.
 - `PATCH /me` cannot *clear* `default_model_id` (its schema treats `null` as "not
   provided"), so a default model can be changed but not removed.
 - `MOBILE_NUMBER` and `EMAIL` are unique per account, so a contact can be attached to
@@ -220,6 +331,11 @@ consequences:
   quieter. Closing it needs a re-authentication step (current password, or a code to the
   *existing* contact) before enabling or replacing a destination on an account that
   already has 2FA on.
+- **Enrolling an authenticator needs no re-authentication.** Anyone acting with a stolen
+  token can provision an authenticator they control and confirm it with a code from it,
+  which adds a method that is then offered at sign-in (it cannot move a default that already
+  exists). This is the same class as the second-contact item above, and the same hardening
+  step — re-authentication before changing a second factor — would close both.
 - **Registration is unverified and `/me/otp/enable` sends to a caller-chosen address.**
   The daily cap is per user, so N throwaway accounts can send N×10 messages a day to any
   address, from the project's own verified sending domain — with the bounce and

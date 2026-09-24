@@ -261,6 +261,37 @@ select.input {
   text-decoration: underline;
 }
 
+/* ---- Authenticator enrolment ---- */
+
+/* The QR sits on the panel colour, not a white card: the code renders in the
+   current text colour, so it stays legible in both themes without a white box. */
+.qrWrap {
+  display: flex;
+  justify-content: center;
+  margin: 0 0 12px;
+  padding: 14px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--bg-panel);
+  color: var(--text-1);
+}
+
+/* The same secret the QR encodes, for entering by hand. Selectable in one go. */
+.secretKey {
+  display: block;
+  margin: 0 0 14px;
+  padding: 9px 12px;
+  border: 1px dashed var(--border);
+  border-radius: var(--radius-md);
+  background: color-mix(in srgb, var(--text-1) 4%, transparent);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 13px;
+  letter-spacing: 0.08em;
+  text-align: center;
+  overflow-wrap: anywhere;
+  user-select: all;
+}
+
 /* Inline validation message under a field (not a toast: it belongs to the input). */
 .fieldError {
   margin: -2px 0 0;

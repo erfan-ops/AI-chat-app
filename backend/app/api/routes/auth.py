@@ -12,6 +12,7 @@ from app.api.dependencies import (
     get_otp_audit,
     get_otp_delivery_service,
     get_otp_service,
+    get_totp_service,
 )
 from app.core.config import Settings, get_settings
 from app.db.database import get_db
@@ -29,6 +30,7 @@ from app.services.auth_service import LoginResult, OtpChallengeResult
 from app.services.otp_audit import OtpAudit
 from app.services.otp_delivery import OtpDeliveryService
 from app.services.otp_service import OtpService
+from app.services.totp_service import TotpService
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
@@ -115,9 +117,10 @@ async def login_with_otp(
     settings: Annotated[Settings, Depends(get_settings)],
     otp: Annotated[OtpService, Depends(get_otp_service)],
     audit: Annotated[OtpAudit, Depends(get_otp_audit)],
+    totp: Annotated[TotpService, Depends(get_totp_service)],
 ) -> LoginResponse:
     result: LoginResult = await get_auth_service(settings).complete_otp_login(
-        db, challenge_id=body.challenge_id, code=body.code, otp=otp, audit=audit
+        db, challenge_id=body.challenge_id, code=body.code, otp=otp, totp=totp, audit=audit
     )
     return LoginResponse(
         access_token=result.access_token,
@@ -134,6 +137,8 @@ async def login_with_otp(
         "Sends a fresh code for the same login through `method` instead of the "
         "channel the first code used, and returns the new `challenge_id`. This is a "
         "choice for this login only: the account's saved default is untouched."
+        "\n\n`method` may be `TOTP`, in which case nothing is sent: the challenge is "
+        "for a code from the account's authenticator app, and no SMS or email goes out."
         "\n\nThe destination is always the one stored on the account — the request "
         "names a channel, never an address. Rejections are 400-level (never 401), "
         "and 503 when the account has no verified contact for that channel."

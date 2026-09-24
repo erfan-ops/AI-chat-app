@@ -46,8 +46,9 @@ class OtpAudit:
                     purpose=challenge.purpose,
                     method=method,
                     # Hex, not the raw digest: the column is a VARCHAR2. Only the HMAC
-                    # is stored, never the code — see app/db/models/otp_log.py.
-                    code_hash=challenge.code_hash.hex(),
+                    # is stored, never the code — see app/db/models/otp_log.py. A TOTP
+                    # challenge has no code here to hash, so the column stays empty.
+                    code_hash=challenge.code_hash.hex() if challenge.code_hash else None,
                     created_at=created_at,
                     expires_at=created_at + timedelta(seconds=ttl_seconds),
                 )

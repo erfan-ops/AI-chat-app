@@ -161,7 +161,12 @@ Copy `.env.example` to `.env` and fill in real values (never commit `.env`):
 | `RESEND_ACTIVATION_SUBJECT` | `Confirm your email address` | Subject for the code that confirms a new address. The bodies of both emails are the templates in `app/services/email_service.py` |
 | `RESEND_OTP_SUBJECT` / `RESEND_TIMEOUT_SECONDS` | `Your AI Chat verification code` / `10` | Subject line and request timeout |
 | `OTP_CODE_TTL_SECONDS` / `OTP_RESEND_COOLDOWN_SECONDS` | `120` / `60` | Code lifetime and minimum gap between two codes for one user (per delivery method) |
-| `OTP_MAX_VERIFY_ATTEMPTS` / `OTP_MAX_SENDS_PER_DAY` | `5` / `10` | Wrong guesses allowed per code, and the daily send cap per user (across methods) |
+| `OTP_MAX_VERIFY_ATTEMPTS` / `OTP_MAX_SENDS_PER_DAY` | `5` / `10` | Wrong guesses allowed per code, and the daily send cap per user (across methods). Authenticator challenges send nothing, so they never spend it |
+| `NTP_SERVER` | `ntp.time.ir` | Authoritative time source for authenticator codes (NTP over UDP, not HTTP) |
+| `NTP_SYNC_INTERVAL_SECONDS` / `NTP_RETRY_INTERVAL_SECONDS` | `3600` / `60` | How often the offset is measured, and how soon a failed sync is retried |
+| `NTP_TIMEOUT_SECONDS` / `NTP_MAX_DELAY_SECONDS` | `5.0` / `1.0` | Round-trip timeout, and the largest delay a sample may have to be trusted |
+| `NTP_MAX_OFFSET_AGE_SECONDS` | `21600` | How old a measured offset may get before authenticator verification refuses (`503`) rather than trust it |
+| `TOTP_ENROLL_TTL_SECONDS` | `600` | How long an enrolment stays open before the QR/secret must be requested again |
 
 ## Installation & running
 
@@ -219,9 +224,11 @@ uv run ty check app
 
 ### Two-step verification (one-time codes)
 
-A second factor is delivered as a one-time code, by **SMS** or by **email** — the same
-generation, expiry, attempt and rate-limit logic either way; only the provider differs
-(`app/services/otp_delivery.py` is the single place that picks one).
+A second factor is delivered as a one-time code, by **SMS**, by **email**, or from an
+**authenticator app** (TOTP) on the user's own device — the same challenge, expiry,
+attempt and rate-limit logic either way. Only the provider differs for the first two
+(`app/services/otp_delivery.py` is the single place that picks one) and TOTP has none: no
+code leaves the device.
 
 - **Enabling** is two calls: `POST /me/otp/enable` sends a code to a mobile number or an
   email address, and `POST /me/otp/verify` confirms it. Only then is the destination
@@ -233,22 +240,42 @@ generation, expiry, attempt and rate-limit logic either way; only the provider d
   until the new one is confirmed. A contact belongs to one account
   (`UK_USERS_MOBILE_NUMBER` / `UK_USERS_EMAIL`), so a destination another account already
   verified is refused with `409` — checked before the code is sent.
+- **Authenticator apps** are enrolled with one call: `POST /me/totp/enable` generates a
+  secret, stores it and returns the `otpauth://` URI (for a QR code) plus the Base32 key,
+  to be shown once. It enables **nothing** — `POST /me/otp/verify` with a code from the app
+  is still what turns two-step on, so merely holding a secret never counts as enrolled.
+  SHA1 / 6 digits / 30 s, accepting the previous, current and next period. `GET /me`
+  reports `authenticator_enrolled` (a boolean, never the secret) so a client can offer the
+  method. Re-enrolling replaces the secret and invalidates the old entry.
 - **Logging in** with two-step on returns `otp_required` + `challenge_id`, the
-  `delivery_method` used, and `alternative_method` when the other channel is usable.
-  `POST /auth/login/otp/method` re-sends to that other channel **for this login only** —
-  the saved default (`PATCH /me {preferred_otp_method}`) is never changed by it.
+  `delivery_method` used, and `alternative_method` when another method is usable.
+  `POST /auth/login/otp/method` moves to that other channel **for this login only** — the
+  saved default (`PATCH /me {preferred_otp_method}`) is never changed by it. Choosing the
+  authenticator sends nothing to anyone.
 - **Privacy**: the login challenge names the channel but never the destination — someone
   holding the password must not learn the phone suffix or the address. The settings flow
   shows a masked destination (`+98 912 *** 6789`, `al***@example.com`) because the caller
   just typed it.
-- **Fail closed**: if the default channel has no verified destination, login answers
-  `503` rather than silently using the other one or dropping to password-only. A
-  configured-but-unusable provider (no API key) is also a `503`, never a silent skip.
+- **Fail closed**: if the default method has no verified destination (or no enrolled
+  authenticator), login answers `503` rather than silently using another one or dropping
+  to password-only. A configured-but-unusable provider (no API key) is also a `503`, never
+  a silent skip.
+- **Authenticator codes need a trustworthy clock.** `TimeService` measures the offset to
+  `NTP_SERVER` (default `ntp.time.ir`) at startup and every `NTP_SYNC_INTERVAL_SECONDS`,
+  and verification uses local time plus that cached offset — **no NTP request happens while
+  a code is checked**. If the clock has not synchronized, or its offset is older than
+  `NTP_MAX_OFFSET_AGE_SECONDS`, authenticator verification answers `503` with a logged
+  reason instead of guessing; SMS, email and password login are unaffected. The application
+  starts normally when the NTP server is unreachable.
 - Codes are 6 digits, stored only as an HMAC, single-use, valid for
-  `OTP_CODE_TTL_SECONDS`, and dropped after `OTP_MAX_VERIFY_ATTEMPTS` wrong guesses.
-  Rejections are **400, never 401** — the client signs out on an authenticated 401. The
+  `OTP_CODE_TTL_SECONDS`, and dropped after `OTP_MAX_VERIFY_ATTEMPTS` wrong guesses. TOTP
+  codes are never known to the server, so nothing about them is stored — a TOTP challenge
+  carries no hash and can only be satisfied by the validator that checks it against the
+  enrolled secret and the corrected clock.
+- Rejections are **400, never 401** — the client signs out on an authenticated 401. The
   cooldown is per delivery method (so switching channels is immediate) while the daily
-  send cap is per user (so switching buys no extra sends). The challenge store is
+  send cap is per user and covers *messages* only (so switching buys no extra sends, and an
+  authenticator challenge — which sends nothing — never spends it). The challenge store is
   in-process: **single worker or sticky sessions** — see `docs/otp-2fa-notes.md`.
 
 ## API overview
@@ -261,8 +288,9 @@ generation, expiry, attempt and rate-limit logic either way; only the provider d
 | `POST /auth/login/otp/method` | Send this login's code through the other channel instead (public) |
 | `GET /me` · `PATCH /me` | Profile; update username / display name / default model / `preferred_otp_method` (a taken username is `409`) |
 | `POST /me/password` | Change the password — needs the current one (`400` if wrong, never `401`) |
-| `POST /me/otp/enable` · `/me/otp/verify` | Verify a mobile number or email address, then turn two-step on |
-| `POST /me/otp/disable` | Turn two-step off; verified contacts are kept |
+| `POST /me/otp/enable` · `/me/otp/verify` | Verify a mobile number, an email address or an enrolled authenticator, then turn two-step on |
+| `POST /me/totp/enable` | Generate and store an authenticator secret; returns the `otpauth://` URI and key **once** (enables nothing) |
+| `POST /me/otp/disable` | Turn two-step off; verified contacts and the enrolled authenticator are kept |
 | `GET /characters` | Active AI characters: built-in + the user's own — the same scope for administrators |
 | `GET /characters/{id}` | One character (admin: any owner or status) |
 | `POST /characters` | Create a private character owned by the caller |
