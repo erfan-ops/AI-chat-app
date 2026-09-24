@@ -260,3 +260,11 @@ select.input {
 .contactAction:hover {
   text-decoration: underline;
 }
+
+/* Inline validation message under a field (not a toast: it belongs to the input). */
+.fieldError {
+  margin: -2px 0 0;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--danger);
+}

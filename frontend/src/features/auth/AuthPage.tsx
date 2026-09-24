@@ -22,6 +22,8 @@ export function AuthPage() {
   const [mode, setMode] = useState<Mode>('login')
   const [username, setUsername] = useState('')
   const [password, setPassword] = useState('')
+  /** Registration-only: the same password typed twice. */
+  const [confirmPassword, setConfirmPassword] = useState('')
   const [displayName, setDisplayName] = useState('')
   const [error, setError] = useState<string | null>(null)
   /** Set when the password was accepted but a second factor is required. The tabs
@@ -115,6 +117,10 @@ export function AuthPage() {
       setError(mode === 'register' ? 'Password must be at least 8 characters.' : 'Enter your password.')
       return
     }
+    if (mode === 'register' && password !== confirmPassword) {
+      setError('The passwords do not match.')
+      return
+    }
 
     submit.mutate()
   }
@@ -122,6 +128,8 @@ export function AuthPage() {
   function switchMode(next: Mode) {
     setMode(next)
     setError(null)
+    // A confirmation belongs to the form it was typed in.
+    setConfirmPassword('')
   }
 
   const busy = submit.isPending
@@ -308,7 +316,37 @@ export function AuthPage() {
               />
             </div>
 
-            <button type="submit" className={styles.submit} disabled={busy}>
+            {mode === 'register' && (
+              <div className={styles.field}>
+                <label htmlFor="auth-confirm-password" className={styles.label}>
+                  Confirm password
+                </label>
+                <input
+                  id="auth-confirm-password"
+                  className={styles.input}
+                  type="password"
+                  autoComplete="new-password"
+                  maxLength={128}
+                  value={confirmPassword}
+                  onChange={(event) => setConfirmPassword(event.target.value)}
+                  aria-invalid={confirmPassword.length > 0 && confirmPassword !== password}
+                  aria-describedby="auth-confirm-password-hint"
+                  disabled={busy}
+                  required
+                />
+                {confirmPassword.length > 0 && confirmPassword !== password && (
+                  <p id="auth-confirm-password-hint" className={styles.fieldError} role="alert">
+                    The passwords do not match.
+                  </p>
+                )}
+              </div>
+            )}
+
+            <button
+              type="submit"
+              className={styles.submit}
+              disabled={busy || (mode === 'register' && password !== confirmPassword)}
+            >
               {busy ? (
                 <>
                   <Spinner size={16} label="Please wait" className={styles.submitSpinner} />

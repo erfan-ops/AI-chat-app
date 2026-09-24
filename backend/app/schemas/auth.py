@@ -29,6 +29,18 @@ class LoginRequest(BaseModel):
     password: str = Field(min_length=1, max_length=128)
 
 
+class PasswordChangeRequest(BaseModel):
+    """Body for POST /me/password.
+
+    The confirmation field is the client's business, not the API's: by the time a
+    request arrives there is only one new password to set.
+    """
+
+    current_password: str = Field(min_length=1, max_length=128)
+    # Same rules as registration, since it is the same credential.
+    new_password: str = Field(min_length=8, max_length=128)
+
+
 class LoginResponse(BaseModel):
     """Successful login: a bearer access token plus the user profile."""
 

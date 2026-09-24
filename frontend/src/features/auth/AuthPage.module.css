@@ -270,3 +270,11 @@
   color: var(--text-1);
   text-decoration: underline;
 }
+
+/* Inline validation message under a field (not the banner: it belongs to the input). */
+.fieldError {
+  margin: 6px 0 0;
+  font-size: 12.5px;
+  line-height: 1.5;
+  color: var(--danger);
+}

@@ -98,7 +98,8 @@ and uses the `AI_API_KEY` / `AI_BASE_URL` / `AI_MODEL` env fallbacks.
   Anything else → generic 500 with details logged server-side only. Provider failures
   mid-stream are `error` SSE events, not HTTP errors.
 - The login throttle (5 failures → 60 s, `429` + `Retry-After`) is in-memory per
-  process — not shared across workers.
+  process — not shared across workers. `POST /me/password` shares that counter, so a
+  wrong current password costs the same budget as a wrong login.
 - **Two-step verification** (`app/services/two_factor_service.py`, `otp_service.py`,
   `otp_delivery.py`, `sms_service.py`, `email_service.py`): the second step never issues
   a token — `POST /auth/login` returns `otp_required` + a `challenge_id` and

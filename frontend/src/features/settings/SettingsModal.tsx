@@ -1,7 +1,13 @@
 import { useCallback, useEffect, useState } from 'react'
 import type { FormEvent } from 'react'
 import { useMutation } from '@tanstack/react-query'
-import { disableOtp, startOtpEnable, updateMe, verifyOtpEnable } from '../../api/auth'
+import {
+  changePassword as changePasswordRequest,
+  disableOtp,
+  startOtpEnable,
+  updateMe,
+  verifyOtpEnable,
+} from '../../api/auth'
 import { useSession, updateSessionUser } from '../../session/authSession'
 import { THEMES, resolveTheme, setTheme, useTheme } from '../../theme/themeStore'
 import type { Theme } from '../../theme/themeStore'
@@ -68,6 +74,9 @@ export function SettingsModal({ open, onClose }: SettingsModalProps) {
   /** True while verifying an *additional* contact on an account that already has 2FA. */
   /** Why the verification form is open: adding the missing contact, or replacing one. */
   const [contactForm, setContactForm] = useState<'add' | 'change' | null>(null)
+  const [currentPassword, setCurrentPassword] = useState('')
+  const [newPassword, setNewPassword] = useState('')
+  const [confirmPassword, setConfirmPassword] = useState('')
   const [challenge, setChallenge] = useState<OtpChallenge | null>(null)
   const [code, setCode] = useState('')
   const [secondsLeft, setSecondsLeft] = useState(0)
@@ -88,6 +97,18 @@ export function SettingsModal({ open, onClose }: SettingsModalProps) {
     onSuccess: (updated: User) => {
       updateSessionUser(updated)
       pushToast('success', 'Settings saved')
+    },
+    onError: (error) => pushToast('error', errorMessage(error)),
+  })
+
+  const changePassword = useMutation({
+    mutationFn: () =>
+      changePasswordRequest({ current_password: currentPassword, new_password: newPassword }),
+    onSuccess: () => {
+      setCurrentPassword('')
+      setNewPassword('')
+      setConfirmPassword('')
+      pushToast('success', 'Password updated')
     },
     onError: (error) => pushToast('error', errorMessage(error)),
   })
@@ -163,6 +184,21 @@ export function SettingsModal({ open, onClose }: SettingsModalProps) {
   function saveProfileSettings(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
     saveProfile.mutate()
+  }
+
+  /** Matched here rather than by the API: by the time it is sent there is only one
+   *  new password, so a mismatch is a typing mistake to catch in the form. */
+  const passwordsMatch = newPassword === confirmPassword
+  const passwordFormValid =
+    currentPassword.length > 0 && newPassword.length >= 8 && passwordsMatch
+
+  function submitPassword(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    if (!passwordsMatch) {
+      pushToast('error', 'The new passwords do not match.')
+      return
+    }
+    changePassword.mutate()
   }
 
   function submitDestination(event: FormEvent<HTMLFormElement>) {
@@ -288,6 +324,85 @@ export function SettingsModal({ open, onClose }: SettingsModalProps) {
               </>
             ) : (
               'Save profile'
+            )}
+          </button>
+        </div>
+      </form>
+
+      <hr className={styles.divider} />
+
+      <form onSubmit={submitPassword} noValidate>
+        <h3 className={styles.sectionTitle}>Password</h3>
+
+        <div className={styles.field}>
+          <label htmlFor="settings-current-password" className={styles.label}>
+            Current password
+          </label>
+          <input
+            id="settings-current-password"
+            type="password"
+            className={styles.input}
+            value={currentPassword}
+            onChange={(event) => setCurrentPassword(event.target.value)}
+            autoComplete="current-password"
+            disabled={changePassword.isPending}
+          />
+        </div>
+
+        <div className={styles.field}>
+          <label htmlFor="settings-new-password" className={styles.label}>
+            New password
+          </label>
+          <input
+            id="settings-new-password"
+            type="password"
+            className={styles.input}
+            value={newPassword}
+            onChange={(event) => setNewPassword(event.target.value)}
+            autoComplete="new-password"
+            aria-describedby="settings-new-password-hint"
+            disabled={changePassword.isPending}
+          />
+          <p id="settings-new-password-hint" className={styles.fieldHint}>
+            At least 8 characters.
+          </p>
+        </div>
+
+        <div className={styles.field}>
+          <label htmlFor="settings-confirm-password" className={styles.label}>
+            Confirm new password
+          </label>
+          <input
+            id="settings-confirm-password"
+            type="password"
+            className={styles.input}
+            value={confirmPassword}
+            onChange={(event) => setConfirmPassword(event.target.value)}
+            autoComplete="new-password"
+            aria-invalid={confirmPassword.length > 0 && !passwordsMatch}
+            aria-describedby="settings-confirm-password-hint"
+            disabled={changePassword.isPending}
+          />
+          {confirmPassword.length > 0 && !passwordsMatch && (
+            <p id="settings-confirm-password-hint" className={styles.fieldError} role="alert">
+              The new passwords do not match.
+            </p>
+          )}
+        </div>
+
+        <div className={styles.footer}>
+          <button
+            type="submit"
+            className={styles.submit}
+            disabled={!passwordFormValid || changePassword.isPending}
+          >
+            {changePassword.isPending ? (
+              <>
+                <Spinner size={15} label="Updating password" className={styles.submitSpinner} />
+                Updating…
+              </>
+            ) : (
+              'Update password'
             )}
           </button>
         </div>

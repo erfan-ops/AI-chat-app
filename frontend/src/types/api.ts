@@ -96,6 +96,12 @@ export interface OtpVerifyRequest {
   code: string
 }
 
+export interface PasswordChangeRequest {
+  current_password: string
+  /** Same rules as registration: at least 8 characters. */
+  new_password: string
+}
+
 export interface UserUpdate {
   username?: string | null
   display_name?: string | null

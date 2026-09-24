@@ -18,7 +18,8 @@ the API. Nothing is hardcoded or mocked.
 ## Features
 
 - **Accounts** — registration and login with Argon2id password hashing and signed
-  JWT access tokens; failed-login throttling (5 attempts → 60 s lockout).
+  JWT access tokens; failed-login throttling (5 attempts → 60 s lockout); change your
+  password from settings by confirming the current one.
 - **Settings & two-step verification** — change your username (unique across
   accounts, and checked on the server), display name and default model, and protect
   sign-in with a one-time code sent by **SMS or email** (your choice, and switchable for

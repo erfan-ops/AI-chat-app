@@ -7,6 +7,7 @@ import type {
   OtpEnableRequest,
   OtpRequiredResponse,
   OtpVerifyRequest,
+  PasswordChangeRequest,
   RegisterRequest,
   User,
   UserUpdate,
@@ -56,6 +57,12 @@ export function getMe(): Promise<User> {
 
 export function updateMe(request: UserUpdate): Promise<User> {
   return apiRequest<User>('/me', { method: 'PATCH', body: request })
+}
+
+/** Replace the password. A wrong current password is a 400, never a 401 — this
+ *  client signs out on any authenticated 401. */
+export function changePassword(request: PasswordChangeRequest): Promise<User> {
+  return apiRequest<User>('/me/password', { method: 'POST', body: request })
 }
 
 /** Send a verification code to the given contact — a local 10-digit mobile number

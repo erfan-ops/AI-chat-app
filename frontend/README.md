@@ -81,7 +81,8 @@ src/
   components/              # shared UI: Avatar, Modal, Spinner, EmptyState, ErrorState,
                            #   ToastHost (+ toastStore), inline SVG icon set
   features/
-    auth/AuthPage          # sign-in / account creation, plus the code step for accounts
+    auth/AuthPage          # sign-in / account creation (password typed twice), plus the
+                           #   code step for accounts
                            #   with two-step verification (and the switch to the other
                            #   delivery method)
     conversations/         # sidebar, list items (rename/delete), infinite list query
@@ -128,7 +129,9 @@ its family at the front of the `body` stack.
   a 400 — never a 401, because this client would treat that as an expired session and
   sign the user out.
 - **Settings**: the sidebar footer opens a settings dialog — username, display name and
-  default model (`PATCH /me`), theme, and two-step verification (`/me/otp/*`). The
+  default model (`PATCH /me`), password (`POST /me/password`, with the new password typed
+  twice and matched in the form before it is sent), theme, and two-step verification
+  (`/me/otp/*`). The
   username field only sends a value when it actually changed and is validated client-side
   to the API's rules; a name another account already holds comes back as a `409`, which
   the dialog reports inline (it is never a 401, so the user is not signed out). A

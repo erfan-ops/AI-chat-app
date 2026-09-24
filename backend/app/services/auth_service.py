@@ -20,6 +20,7 @@ from app.exceptions import (
     BadRequestError,
     ConflictError,
     ForbiddenError,
+    NotFoundError,
     RateLimitError,
     ServiceUnavailableError,
     UnauthorizedError,
@@ -178,6 +179,39 @@ class AuthService:
         token, expires_in = self._tokens.create_access_token(user.id)
         structured(logger, logging.INFO, "login succeeded", user_id=user.id)
         return LoginResult(user=user, access_token=token, expires_in_minutes=expires_in)
+
+    async def change_password(
+        self,
+        db: AsyncSession,
+        *,
+        user_id: int,
+        current_password: str,
+        new_password: str,
+    ) -> User:
+        """Replace the password, once the current one has been given.
+
+        Throttled by the same per-username counter as login: without that, a stolen
+        token would be an unlimited oracle for guessing the password it exists to
+        protect. Failures are 400, never 401 — this client signs out on any
+        authenticated 401, so a mistyped password would eject the user.
+        """
+        user = await UserRepository(db).get_by_id(user_id)
+        if user is None:
+            raise NotFoundError("User not found")
+        if self._attempts.is_locked(user.username):
+            raise RateLimitError("Too many failed attempts; try again later")
+        if not self._passwords.verify(user.password_hash, current_password):
+            self._attempts.record_failure(user.username)
+            structured(logger, logging.WARNING, "password change rejected", user_id=user.id)
+            raise BadRequestError("That password is incorrect")
+
+        self._attempts.reset(user.username)
+        user.password_hash = self._passwords.hash(new_password)
+        user.updated_at = utcnow()
+        await db.commit()
+        await db.refresh(user)
+        structured(logger, logging.INFO, "password changed", user_id=user.id)
+        return user
 
     async def complete_otp_login(
         self,

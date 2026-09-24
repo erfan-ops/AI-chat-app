@@ -262,6 +262,56 @@
     ]
    }
   },
+  "/me/password": {
+   "post": {
+    "tags": [
+     "users"
+    ],
+    "summary": "Change the authenticated user's password",
+    "description": "Replaces the password after checking the current one. A wrong current password is rejected with 400 \u2014 never 401, which would sign the caller out of the session they are asking from \u2014 and repeated failures are throttled by the same counter as login.\n\nExisting access tokens keep working: this codebase has no token revocation, so the new password takes effect at the next sign-in.",
+    "operationId": "change_password_me_password_post",
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/PasswordChangeRequest"
+       }
+      }
+     },
+     "required": true
+    },
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/UserRead"
+        }
+       }
+      }
+     },
+     "400": {
+      "description": "The current password is incorrect"
+     },
+     "422": {
+      "description": "Validation Error",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      }
+     }
+    },
+    "security": [
+     {
+      "HTTPBearer": []
+     }
+    ]
+   }
+  },
   "/me/otp/enable": {
    "post": {
     "tags": [
@@ -2615,6 +2665,29 @@
     ],
     "title": "OtpVerifyRequest",
     "description": "Body for POST /me/otp/verify.\n\nCarries no destination on purpose: the address that was verified is the one the\nchallenge went to, never a second client-supplied value."
+   },
+   "PasswordChangeRequest": {
+    "properties": {
+     "current_password": {
+      "type": "string",
+      "maxLength": 128,
+      "minLength": 1,
+      "title": "Current Password"
+     },
+     "new_password": {
+      "type": "string",
+      "maxLength": 128,
+      "minLength": 8,
+      "title": "New Password"
+     }
+    },
+    "type": "object",
+    "required": [
+     "current_password",
+     "new_password"
+    ],
+    "title": "PasswordChangeRequest",
+    "description": "Body for POST /me/password.\n\nThe confirmation field is the client's business, not the API's: by the time a\nrequest arrives there is only one new password to set."
    },
    "PersonaBrief": {
     "properties": {

@@ -202,6 +202,11 @@ uv run ty check app
   store (e.g. Redis) in multi-worker deployments.
 - Every endpoint except register/login requires `Authorization: Bearer <token>`.
   Invalid/expired tokens → `401`; disabled accounts → `403`.
+- `POST /me/password` replaces the password after checking the current one. A wrong one
+  is `400` (a `401` would sign the caller out of the session they are asking from), and
+  failures share the login throttle — otherwise a stolen token would be an unlimited
+  oracle for guessing the password. Tokens already issued keep working: this codebase has
+  no revocation, so the new password applies at the next sign-in.
 - **Authorization is enforced server-side on every request**: conversations, messages,
   and memories are always filtered by the authenticated user; a foreign conversation id
   yields `404`, indistinguishable from a nonexistent one.
@@ -255,6 +260,7 @@ generation, expiry, attempt and rate-limit logic either way; only the provider d
 | `POST /auth/login/otp` | Complete a two-step login with the code (public) |
 | `POST /auth/login/otp/method` | Send this login's code through the other channel instead (public) |
 | `GET /me` · `PATCH /me` | Profile; update username / display name / default model / `preferred_otp_method` (a taken username is `409`) |
+| `POST /me/password` | Change the password — needs the current one (`400` if wrong, never `401`) |
 | `POST /me/otp/enable` · `/me/otp/verify` | Verify a mobile number or email address, then turn two-step on |
 | `POST /me/otp/disable` | Turn two-step off; verified contacts are kept |
 | `GET /characters` | Active AI characters: built-in + the user's own — the same scope for administrators |
