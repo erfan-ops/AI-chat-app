@@ -37,6 +37,24 @@ export interface SendMessageStreamHandlers {
   onStreamError: (event: StreamErrorEvent) => void
 }
 
+/** The browser's own clock: its name for the zone and its offset from UTC in
+ *  minutes. Sent with each message so the AI can be told what time it is where the
+ *  user is — the server stores nothing but UTC, so it cannot work this out itself.
+ *  A browser that will not say is no reason to fail the request: the fields are
+ *  simply omitted and the AI sees UTC timestamps, as it did before. */
+function clientClock(): { client_timezone?: string; client_utc_offset_minutes?: number } {
+  try {
+    const clock: { client_timezone?: string; client_utc_offset_minutes?: number } = {
+      client_utc_offset_minutes: -new Date().getTimezoneOffset(),
+    }
+    const zone = Intl.DateTimeFormat().resolvedOptions().timeZone
+    if (zone) clock.client_timezone = zone
+    return clock
+  } catch {
+    return {}
+  }
+}
+
 /**
  * Sends a message and consumes the streamed AI reply.
  *
@@ -57,7 +75,7 @@ export async function sendMessageStream(
 ): Promise<Message> {
   const token = getSession()?.accessToken ?? null
 
-  const body: MessageCreateRequest = { content, reply_to_id: replyToId }
+  const body: MessageCreateRequest = { content, reply_to_id: replyToId, ...clientClock() }
   let response: Response
   try {
     response = await fetch(`${API_BASE_URL}/conversations/${conversationId}/messages`, {

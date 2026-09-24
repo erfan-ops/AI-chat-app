@@ -221,6 +221,10 @@ export interface Message {
 /** Body for POST /conversations/{id}/messages (starts a streamed AI reply).
  *  `reply_to_id` must reference a message in the same conversation (404 otherwise). */
 export interface MessageCreateRequest {
+  /** The sender's IANA timezone name, e.g. "Asia/Tehran". Optional. */
+  client_timezone?: string
+  /** Minutes east of UTC, e.g. 210 for +03:30. Optional. */
+  client_utc_offset_minutes?: number
   content: string
   reply_to_id?: number | null
 }

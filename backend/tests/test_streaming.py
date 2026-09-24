@@ -708,3 +708,62 @@ async def test_stream_emoji_split_across_chunks_streams_intact(
             ("user", "hi"),
             ("assistant", "I love you 💕"),
         ]
+
+
+async def test_the_senders_clock_reaches_the_model(
+    client: AsyncClient, scripted_provider: ScriptedProvider
+) -> None:
+    """The browser's timezone and offset end up in the system prompt, and nowhere
+    near the message history."""
+    headers, _user = await auth_user(client, "alice")
+    conversation = await create_conversation(client, headers)
+
+    response = await client.post(
+        f"/conversations/{conversation['id']}/messages",
+        json={
+            "content": "What time is it?",
+            "client_timezone": "Asia/Tehran",
+            "client_utc_offset_minutes": 210,
+        },
+        headers=headers,
+    )
+    assert response.status_code == 200
+    await response.aread()
+
+    system = scripted_provider.requests[-1].messages[0].content
+    assert "CURRENT TIME" in system
+    assert "(Asia/Tehran)" in system
+    assert "+03:30" in system
+
+
+async def test_a_message_without_a_clock_is_unchanged(
+    client: AsyncClient, scripted_provider: ScriptedProvider
+) -> None:
+    """An API client that sends nothing new gets exactly the old prompt."""
+    headers, _user = await auth_user(client, "alice")
+    conversation = await create_conversation(client, headers)
+
+    response = await client.post(
+        f"/conversations/{conversation['id']}/messages",
+        json={"content": "no clock here"},
+        headers=headers,
+    )
+    assert response.status_code == 200
+    await response.aread()
+
+    system = scripted_provider.requests[-1].messages[0].content
+    assert "CURRENT TIME" not in system
+
+
+async def test_an_impossible_offset_is_rejected(client: AsyncClient) -> None:
+    """Offsets beyond ±14:00 are not real zones — the body is refused."""
+    headers, _user = await auth_user(client, "alice")
+    conversation = await create_conversation(client, headers)
+
+    response = await client.post(
+        f"/conversations/{conversation['id']}/messages",
+        json={"content": "hi", "client_utc_offset_minutes": 5000},
+        headers=headers,
+    )
+
+    assert response.status_code == 422

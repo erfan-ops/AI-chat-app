@@ -289,10 +289,42 @@ def render_persona(persona: UserPersona) -> str:
     return "\n".join(lines)
 
 
+# A timezone name arrives from the client and is interpolated into the system prompt,
+# so only the characters real zone names use survive. Anything else is dropped rather
+# than rejected: an odd clock is no reason to refuse to send a message.
+_TIMEZONE_PATTERN = re.compile(r"[^A-Za-z0-9_+\-/]")
+_TIMEZONE_MAX_LENGTH = 64
+
+
+def sanitize_timezone(value: str | None) -> str | None:
+    """Return a usable timezone label, or ``None`` if nothing usable is left."""
+    if not value:
+        return None
+    cleaned = _TIMEZONE_PATTERN.sub("", value)[:_TIMEZONE_MAX_LENGTH]
+    return cleaned or None
+
+
+def render_user_clock(local_time: datetime, timezone_name: str | None = None) -> str:
+    """The block that tells the model what time it is where the user is.
+
+    Message timestamps are UTC (see ``render_created_at``); this is the one place the
+    user's own clock is stated, so the model can talk about times of day without
+    doing timezone arithmetic on every message.
+    """
+    where = f" ({timezone_name})" if timezone_name else ""
+    return (
+        f"CURRENT TIME. It is {local_time.isoformat()} for the user{where}. The "
+        "timestamps in the message history above are UTC — convert them with that "
+        "offset when a time of day matters."
+    )
+
+
 def _build_system_prompt(
     character_system_prompt: str | None,
     memories: Sequence[Memory],
     user_persona: UserPersona | None = None,
+    user_local_time: datetime | None = None,
+    user_timezone: str | None = None,
 ) -> str:
     system = (character_system_prompt or DEFAULT_SYSTEM_PROMPT).strip()
     memory_lines = [memory.content.strip() for memory in memories if memory.content.strip()]
@@ -303,6 +335,10 @@ def _build_system_prompt(
         persona_block = render_persona(user_persona)
         if persona_block:
             system += f"\n\n{PERSONA_PREAMBLE}\n{PERSONA_HEADER}\n{persona_block}\n{PERSONA_FOOTER}"
+    # Only when the client told us where it is: otherwise the model sees UTC
+    # timestamps and nothing else, exactly as before.
+    if user_local_time is not None:
+        system += f"\n\n{render_user_clock(user_local_time, sanitize_timezone(user_timezone))}"
     # Every history message is enveloped, so the format contract is unconditional.
     system += f"\n\n{MESSAGE_FORMAT_HINT}"
     return system
@@ -356,16 +392,20 @@ def build_conversation_context(
     default_context_chars: int,
     max_memories: int,
     user_persona: UserPersona | None = None,
+    user_local_time: datetime | None = None,
+    user_timezone: str | None = None,
 ) -> ConversationContext:
-    """Assemble the character prompt + top memories + user persona + history.
+    """Assemble the character prompt + memories + persona + the user's clock + history.
 
-    ``user_persona`` is optional: without one the system prompt is exactly what
-    it was before personas existed (plus the unconditional message-format hint).
+    ``user_persona`` and the clock are optional: without them the system prompt is
+    exactly what it was before each existed (plus the unconditional format hint).
     """
     system_prompt = _build_system_prompt(
         character_system_prompt,
         memories[:max_memories],
         user_persona,
+        user_local_time,
+        user_timezone,
     )
     char_budget = context_window * CHARS_PER_TOKEN if context_window else default_context_chars
     return ConversationContext(

@@ -172,7 +172,10 @@ its family at the front of the `body` stack.
   message history pages backwards with `before_id` (older messages load when
   scrolling to the top, with scroll anchoring).
 - **Timestamps**: the backend stores naive-UTC `TIMESTAMP` values and serializes them
-  without a zone suffix, so all dates are parsed as UTC (`utils/dates.ts`).
+  without a zone suffix, so all dates are parsed as UTC (`utils/dates.ts`). Each message
+  also carries the browser's own timezone and UTC offset (`api/messages.ts`), which the
+  backend turns into a `CURRENT TIME` line for the AI — the server only knows UTC, so
+  telling it where the user is has to come from the client.
 - **New chat wizard**: `features/newConversation` walks character → model → persona one
   step at a time, reusing the same selection UI (and the same `useCharacters` /
   `useModels` / `usePersonas` queries) it always had. The stepper at the top is the

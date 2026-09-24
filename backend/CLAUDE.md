@@ -140,7 +140,8 @@ and uses the `AI_API_KEY` / `AI_BASE_URL` / `AI_MODEL` env fallbacks.
 - Logging: `structured(logger, level, msg, **fields)` from `app/core/logging.py`
   (key=value fields). Never log passwords, tokens, API keys, or message contents.
 - Context building in `app/ai/context.py` is pure (no I/O): persona prompt + top
-  memories + budgeted history (~4 chars/token heuristic, newest message never
+  memories + the user's local clock (when the client sends its timezone/offset — the
+  server stores only UTC) + budgeted history (~4 chars/token heuristic, newest message never
   dropped). Every history message is sent to the AI as a JSON envelope carrying
   id/role/content/created_at/reply_to_id (`render_message_body`, with
   `render_created_at` formatting the timestamp as UTC ISO-8601); the AI's reply envelope

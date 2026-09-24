@@ -355,12 +355,17 @@ For each generation the app builds the model context from persisted data
    application instructions — the character prompt above stays authoritative. With no
    persona the system prompt is byte-for-byte what it was before the feature, and the
    persona row is not even queried.
-4. **History**: the most recent messages that fit a token budget
+4. **The user's clock** (optional): when the client sends its timezone and UTC offset
+   (the browser knows both), a `CURRENT TIME` line states what time it is where the user
+   is, with the offset, and says the history timestamps are UTC. That is the only place
+   the user's own clock is stated; without it the model sees UTC alone. The timezone name
+   is client-supplied text, so only zone-name characters survive it.
+5. **History**: the most recent messages that fit a token budget
    (`context_window × 4` chars if the model row has one, else `AI_DEFAULT_CONTEXT_CHARS`),
    capped at `AI_CONTEXT_MAX_MESSAGES`; the newest message is never dropped. The walk is
    backwards/truncation-friendly, so summarization or smarter budgeting can be added
    without touching the rest of the service.
-5. **Reply contract**: history is enveloped as JSON (`id`, `role`, `content`,
+6. **Reply contract**: history is enveloped as JSON (`id`, `role`, `content`,
    `created_at`, `reply_to_id`) and the model must answer with
    `{"content": ..., "reply_to_id": ...}`. `reply_to_id` is **null by default** —
    answering the newest message is an ordinary reply and carries no quote. The model

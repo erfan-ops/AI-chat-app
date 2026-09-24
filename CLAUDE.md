@@ -55,9 +55,11 @@ frontend/ React 19 SPA: feature folders, TanStack Query for server state, SSE vi
   Client disconnect cancels the provider stream and persists nothing partial.
 - **Structured message contract** (`app/ai/context.py`, pure functions):
   every history message is sent to the AI as a JSON envelope
-  `{"id", "role", "content", "created_at", "reply_to_id"}` (ids included so the
-  AI can reply by id; `created_at` is UTC ISO-8601 so it can tell how far apart
-  messages were sent). The AI replies with `{"content", "reply_to_id"}`; the content is
+  `{"id", "role", "content", "created_at", "reply_to_id"}` — ids so the AI can reply
+  by id, `created_at` as UTC ISO-8601 so it can tell how far apart messages were sent.
+  When the client sends its timezone/offset, a `CURRENT TIME` line is added to the
+  system prompt so the model also knows what time it is where the user is. The AI
+  replies with `{"content", "reply_to_id"}`; the content is
   extracted progressively from the streamed JSON (`extract_streamed_content`)
   and the reply is parsed at completion (`parse_completion`, raw-text
   fallback). Never change the wire format without updating both

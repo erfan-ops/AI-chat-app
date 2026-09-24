@@ -94,6 +94,8 @@ async def send_message(
         user_id=user.id,
         content=body.content,
         reply_to_id=body.reply_to_id,
+        client_timezone=body.client_timezone,
+        client_utc_offset_minutes=body.client_utc_offset_minutes,
         session_factory=session_factory,
     )
     return StreamingResponse(

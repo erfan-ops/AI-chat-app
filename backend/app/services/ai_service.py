@@ -37,7 +37,7 @@ from app.ai.context import (
 )
 from app.core.config import Settings
 from app.core.logging import get_logger, structured
-from app.core.time import utcnow
+from app.core.time import local_time, utcnow
 from app.db.models.ai import AIModel
 from app.db.models.conversation import Conversation
 from app.db.models.message import Message, MessageGeneration
@@ -99,6 +99,8 @@ class AIService:
         user_id: int,
         content: str,
         reply_to_id: int | None = None,
+        client_timezone: str | None = None,
+        client_utc_offset_minutes: int | None = None,
         session_factory: SessionFactory,
     ) -> PreparedStream:
         """Verify ownership, persist the user message, and build the model context."""
@@ -163,6 +165,14 @@ class AIService:
             default_context_chars=settings.ai_default_context_chars,
             max_memories=settings.ai_max_memories,
             user_persona=persona,
+            # The sender's own clock, when the client knows it: the model can then
+            # talk about times of day in the user's terms.
+            user_local_time=(
+                local_time(client_utc_offset_minutes)
+                if client_utc_offset_minutes is not None
+                else None
+            ),
+            user_timezone=client_timezone,
         )
         structured(
             logger,
