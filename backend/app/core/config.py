@@ -100,6 +100,17 @@ class Settings(BaseSettings):
     otp_resend_cooldown_seconds: int = Field(default=60, ge=0)
     otp_max_verify_attempts: int = Field(default=5, ge=1)
     otp_max_sends_per_day: int = Field(default=10, ge=1)
+    # The rolling window the two limits below are counted over.
+    otp_rate_window_seconds: int = Field(default=900, ge=30)
+    # Per destination (mobile number or email address) and per client address. The
+    # per-user daily cap alone cannot stop many throwaway accounts from texting one
+    # number, nor one address from spraying codes at accounts; these two are keyed
+    # independently of the account for exactly that reason.
+    otp_max_sends_per_destination: int = Field(default=3, ge=1)
+    otp_max_sends_per_ip: int = Field(default=10, ge=1)
+    # Authenticator codes have no send to throttle, so the attempt side carries the
+    # limit: this many wrong codes locks authenticator challenges for that account.
+    totp_lockout_seconds: int = Field(default=300, ge=0)
 
     ai_context_max_messages: int = Field(default=50, ge=1)
     ai_default_context_chars: int = Field(default=16000, ge=100)

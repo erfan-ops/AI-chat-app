@@ -11,6 +11,12 @@ and the comparison is constant-time. A challenge is bound to one user and one
 purpose, expires after ``otp_code_ttl_seconds``, is single-use, and dies after
 ``otp_max_verify_attempts`` wrong guesses.
 
+Sending is limited in four independent ways, because each one stops something the
+others cannot: a per-(user, method) resend cooldown, a per-user daily cap, a
+per-destination window (mobile number or email address) and a per-client-address
+window. A limit keyed on the account alone is not enough — throwaway accounts are
+free, and one address or one network can reach many of them.
+
 Nothing here knows how a code travels: a challenge records the *method* it was
 issued for and the *destination* it went to, and the caller picks the provider
 (``app/services/otp_delivery.py``). Switching method mid-login is therefore just
@@ -32,6 +38,7 @@ from collections import deque
 from collections.abc import Callable
 from dataclasses import dataclass
 from hashlib import sha256
+from typing import TypeVar
 
 from app.core.config import Settings
 from app.core.contact import DEFAULT_OTP_METHOD, OtpMethod, Purpose
@@ -39,6 +46,10 @@ from app.core.logging import get_logger, structured
 from app.exceptions import BadRequestError, RateLimitError
 
 logger = get_logger("app.services.otp")
+
+# The two rolling windows are keyed differently (a destination pair, or an address),
+# so the check they share is generic over its key.
+_Key = TypeVar("_Key")
 
 OTP_CODE_DIGITS = 6
 _PER_DAY_SECONDS = 24 * 60 * 60
@@ -101,6 +112,15 @@ class OtpService:
         # while the daily cap stays per user — switching must not buy extra sends.
         self._last_send: dict[tuple[int, OtpMethod], float] = {}
         self._sends: dict[int, deque[float]] = {}
+        # Keyed by destination and by client address rather than by account: these
+        # bound what one *place* can be asked to receive, whichever accounts ask.
+        self._destination_sends: dict[tuple[OtpMethod, str], deque[float]] = {}
+        self._ip_sends: dict[str, deque[float]] = {}
+        # Wrong authenticator codes per user, and the lockout they earn. A sent code
+        # is throttled by its send limits; an authenticator challenge sends nothing,
+        # so the attempt side is the only place this can be bounded.
+        self._totp_failures: dict[int, deque[float]] = {}
+        self._totp_locks: dict[int, float] = {}
 
     # -- internals ---------------------------------------------------------------
 
@@ -115,12 +135,89 @@ class OtpService:
                 sends.popleft()
             if not sends:
                 del self._sends[user_id]
+        # The rolling windows hold at most ``limit`` entries each, but their *keys*
+        # accumulate — one per destination and per address seen. An entry that has
+        # aged out can never block anything again, so it goes.
+        window = self._settings.otp_rate_window_seconds
+        self._prune_window(self._destination_sends, now)
+        self._prune_window(self._ip_sends, now)
+        for user_id, failures in list(self._totp_failures.items()):
+            while failures and failures[0] < now - window:
+                failures.popleft()
+            if not failures:
+                del self._totp_failures[user_id]
+        for user_id, locked_until in list(self._totp_locks.items()):
+            if locked_until <= now:
+                del self._totp_locks[user_id]
         # A cooldown that has already elapsed can never block anything again, so the
         # entry is dead weight — and this dict is the one that grows with users.
         cooldown = self._settings.otp_resend_cooldown_seconds
         for key, sent_at in list(self._last_send.items()):
             if now - sent_at >= cooldown:
                 del self._last_send[key]
+
+    def _prune_window(self, store: dict[_Key, deque[float]], now: float) -> None:
+        """Drop aged-out events from one rolling window, and the key when it empties."""
+        cutoff = now - self._settings.otp_rate_window_seconds
+        for key, events in list(store.items()):
+            while events and events[0] < cutoff:
+                events.popleft()
+            if not events:
+                del store[key]
+
+    def _check_window(
+        self,
+        store: dict[_Key, deque[float]],
+        key: _Key,
+        *,
+        limit: int,
+        now: float,
+        message: str,
+    ) -> None:
+        """Fail if ``key`` has reached ``limit`` events inside the rolling window.
+
+        Read-only: the caller records the event only once *every* limit has passed, so
+        a request that is refused leaves the counters exactly as it found them.
+        """
+        window = self._settings.otp_rate_window_seconds
+        recent = [sent for sent in store.get(key, ()) if sent >= now - window]
+        if len(recent) >= limit:
+            # The window frees up when its oldest entry ages out, not before.
+            raise RateLimitError(message, retry_after_seconds=int(min(recent) + window - now) + 1)
+
+    def _require_totp_unlocked(self, user_id: int) -> None:
+        """Refuse an authenticator challenge or attempt while the account is locked.
+
+        Checked before a code is even looked at: while the lock holds, guessing costs
+        an attacker the whole lockout, not one failed attempt.
+        """
+        remaining = self._totp_locks.get(user_id, 0.0) - self._clock()
+        if remaining > 0:
+            raise RateLimitError(
+                "Too many incorrect authenticator codes; try again later",
+                retry_after_seconds=int(remaining) + 1,
+            )
+
+    def _record_totp_failure(self, user_id: int, now: float) -> None:
+        """Count a wrong authenticator code, locking the account at the threshold.
+
+        Failures are counted in the same rolling window as the send limits, so they
+        age out: a user who mistypes twice today and twice tomorrow never locks, while
+        an attacker grinding codes re-locks as soon as the count is reached again.
+        """
+        failures = self._totp_failures.setdefault(user_id, deque())
+        failures.append(now)
+        if len(failures) >= self._settings.otp_max_verify_attempts:
+            lockout = self._settings.totp_lockout_seconds
+            self._totp_locks[user_id] = now + lockout
+            structured(
+                logger,
+                logging.WARNING,
+                "authenticator locked after repeated failures",
+                user_id=user_id,
+                failures=len(failures),
+                lockout_seconds=lockout,
+            )
 
     def _hash(self, challenge_id: str, code: str) -> bytes:
         return hmac.new(self._hash_key, f"{challenge_id}:{code}".encode(), sha256).digest()
@@ -138,17 +235,28 @@ class OtpService:
         """How long an issued code stays valid."""
         return self._settings.otp_code_ttl_seconds
 
-    def _reserve(self, *, user_id: int, method: OtpMethod, sends_message: bool = True) -> float:
-        """Claim a slot for a new challenge: the cooldown and the daily cap, or raise.
+    def _reserve(
+        self,
+        *,
+        user_id: int,
+        method: OtpMethod,
+        destination: str | None = None,
+        client_ip: str | None = None,
+        sends_message: bool = True,
+    ) -> float:
+        """Claim a slot for a new challenge: every limit, or raise.
 
         Shared by both claim paths so the limits cannot drift apart between a code we
-        send and a code the user's own app generates.
+        send and a code the user's own app generates. Every check runs *before*
+        anything is recorded, so a refused request does not spend the budget of the
+        next one.
 
-        ``sends_message`` is what the daily cap is about — messages, and the money and
-        abuse they represent. An authenticator challenge costs nothing and sends
-        nothing, so it draws on the cooldown (which caps how often the verifier can be
-        attacked) without spending the day's allowance: an authenticator user who
-        signs in from several devices must not be locked out of their own account.
+        ``sends_message`` is what the daily cap and the two windows are about —
+        messages, and the money and abuse they represent. An authenticator challenge
+        costs nothing and sends nothing, so it draws on the cooldown (which caps how
+        often the verifier can be attacked) without spending the day's allowance: an
+        authenticator user who signs in from several devices must not be locked out
+        of their own account.
         """
         now = self._clock()
         self._prune(now)
@@ -161,6 +269,27 @@ class OtpService:
                 "Please wait before requesting another code", retry_after_seconds=wait
             )
 
+        if destination is not None:
+            # A destination is reachable whichever account asks for the code, so the
+            # per-user cap cannot bound it: N throwaway accounts could each spend their
+            # allowance on one number or address. This window is the bound.
+            self._check_window(
+                self._destination_sends,
+                (method, destination),
+                limit=self._settings.otp_max_sends_per_destination,
+                now=now,
+                message="Too many codes requested for this destination; try again later",
+            )
+        if client_ip is not None:
+            self._check_window(
+                self._ip_sends,
+                client_ip,
+                limit=self._settings.otp_max_sends_per_ip,
+                now=now,
+                message="Too many codes requested from this network; try again later",
+            )
+
+        sends: deque[float] | None = None
         if sends_message:
             # The deque has to be able to hold a full day's allowance, or it would evict
             # from the left and the cap below could never be reached.
@@ -172,8 +301,15 @@ class OtpService:
                     "Too many codes requested today; try again tomorrow",
                     retry_after_seconds=_PER_DAY_SECONDS,
                 )
-            sends.append(now)
+
+        # Every limit passed: record the claim.
         self._last_send[(user_id, method)] = now
+        if sends is not None:
+            sends.append(now)
+        if destination is not None:
+            self._destination_sends.setdefault((method, destination), deque()).append(now)
+        if client_ip is not None:
+            self._ip_sends.setdefault(client_ip, deque()).append(now)
         return now
 
     def claim_totp(
@@ -197,12 +333,17 @@ class OtpService:
         is neither an attempt nor something a cooldown protects, and it must not delay
         the first login that follows it. Either way the daily *send* budget is left
         alone: no message, and no money, leaves the building.
+
+        A locked account is refused outright, enrolment included: after repeated wrong
+        codes there is nothing to be gained from a new challenge, and saying so now is
+        kinder than letting the user type a code that will not be checked.
         """
+        self._prune(self._clock())
+        self._require_totp_unlocked(user_id)
         if throttled:
             now = self._reserve(user_id=user_id, method="TOTP", sends_message=False)
         else:
             now = self._clock()
-            self._prune(now)
         challenge_id = secrets.token_urlsafe(32)
         self._pending[challenge_id] = Challenge(
             user_id=user_id,
@@ -223,6 +364,7 @@ class OtpService:
         purpose: Purpose,
         method: OtpMethod = DEFAULT_OTP_METHOD,
         destination: str | None = None,
+        client_ip: str | None = None,
     ) -> tuple[str, str]:
         """Reserve a send slot and mint a code. Returns ``(challenge_id, code)``.
 
@@ -231,10 +373,16 @@ class OtpService:
         already holding. Everything is validated before any state changes, so a
         rejected claim leaves the previous challenge untouched.
 
-        Synchronous on purpose: the cooldown is claimed here, *before* the caller
+        ``destination`` and ``client_ip`` are what the two rolling windows count (see
+        ``_reserve``); both are optional so a caller that has neither — a direct
+        service call in a test — is not refused by a window it cannot feed.
+
+        Synchronous on purpose: the limits are claimed here, *before* the caller
         awaits the provider, so two concurrent requests cannot both send.
         """
-        now = self._reserve(user_id=user_id, method=method)
+        now = self._reserve(
+            user_id=user_id, method=method, destination=destination, client_ip=client_ip
+        )
         code = f"{secrets.randbelow(10**OTP_CODE_DIGITS):0{OTP_CODE_DIGITS}d}"
         challenge_id = secrets.token_urlsafe(32)
         self._pending[challenge_id] = Challenge(
@@ -283,8 +431,9 @@ class OtpService:
         ownership check comes *before* anything is removed, so a foreign id cannot
         destroy another user's code. Only the failed challenge's own method is
         released, so a provider outage on one channel cannot reset the other's
-        cooldown. The daily cap is intentionally *not* decremented, so a failing
-        provider cannot be used to send without bound.
+        cooldown. The daily cap and the two windows are intentionally *not* released:
+        they record that a send was attempted, so a failing provider cannot be used to
+        send without bound.
         """
         challenge = self._pending.get(challenge_id) or self._challenges.get(challenge_id)
         if challenge is None or challenge.user_id != user_id:
@@ -322,6 +471,12 @@ class OtpService:
         Plain ``def`` on purpose: there is no ``await`` between reading and setting
         the consumed state, so the event loop cannot interleave two verifications of
         the same code. Callers commit to the database afterwards.
+
+        An authenticator challenge is refused outright while the account is locked,
+        and a wrong authenticator code counts towards that lock (see
+        ``_record_totp_failure``). A sent code needs neither: its send limits already
+        bound how many of them exist, and the challenge itself dies after
+        ``otp_max_verify_attempts`` guesses.
         """
         now = self._clock()
         self._prune(now)
@@ -333,6 +488,8 @@ class OtpService:
             # Someone else's challenge (or a mismatched session) — same message, so
             # nothing about the other account is revealed.
             raise BadRequestError(_CHALLENGE_GONE_MESSAGE)
+        if challenge.method == "TOTP":
+            self._require_totp_unlocked(challenge.user_id)
 
         # A TOTP challenge has no hash, so only its validator can accept it; a hash
         # challenge ignores any validator. Neither can be satisfied by the other.
@@ -342,6 +499,8 @@ class OtpService:
             valid = hmac.compare_digest(challenge.code_hash, self._hash(challenge_id, code))
         if not valid:
             challenge.attempts_left -= 1
+            if challenge.method == "TOTP":
+                self._record_totp_failure(challenge.user_id, now)
             if challenge.attempts_left <= 0:
                 del self._challenges[challenge_id]
                 structured(
@@ -355,6 +514,10 @@ class OtpService:
 
         # Single use: consuming is removal.
         del self._challenges[challenge_id]
+        if challenge.method == "TOTP":
+            # Proving possession of the authenticator clears the failure history, so a
+            # user who mistyped a few times is not one slip away from a lockout.
+            self._totp_failures.pop(challenge.user_id, None)
         structured(logger, logging.INFO, "otp verified", user_id=challenge.user_id, purpose=purpose)
         return VerifiedChallenge(
             user_id=challenge.user_id,
@@ -364,8 +527,15 @@ class OtpService:
         )
 
     def invalidate_user(self, user_id: int) -> None:
-        """Drop every outstanding challenge for a user (e.g. two-step turned off)."""
+        """Drop a user's outstanding challenges, failure history and lock (2FA off).
+
+        The lock goes with them: it exists to make guessing at the account's
+        authenticator expensive, and with the second factor off there is nothing to
+        guess at. Re-enrolling starts from a clean slate.
+        """
         self._clear_user_challenges(user_id)
+        self._totp_failures.pop(user_id, None)
+        self._totp_locks.pop(user_id, None)
 
     def reset_all(self) -> None:
         """Clear all state (tests)."""
@@ -373,3 +543,7 @@ class OtpService:
         self._pending.clear()
         self._last_send.clear()
         self._sends.clear()
+        self._destination_sends.clear()
+        self._ip_sends.clear()
+        self._totp_failures.clear()
+        self._totp_locks.clear()

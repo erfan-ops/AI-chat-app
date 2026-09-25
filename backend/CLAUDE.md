@@ -116,8 +116,17 @@ and uses the `AI_API_KEY` / `AI_BASE_URL` / `AI_MODEL` env fallbacks.
   `USERS.PREFERRED_OTP_METHOD` NULL means SMS; a login may use another usable method for
   that login only (`POST /auth/login/otp/method`, which never touches the saved
   preference, and sends nothing when it picks the authenticator), and a default with no
-  destination **fails closed (503)** rather than substituting a channel. The cooldown is
-  per (user, method); the daily cap is per user and covers messages only.
+  destination **fails closed (503)** rather than substituting a channel. Four send
+  limits, each covering what the others cannot: a per-(user, method) cooldown, a per-user
+  daily cap, and rolling windows per **destination** and per **client address**
+  (`OtpService._reserve`, counted over `OTP_RATE_WINDOW_SECONDS`) — the last two are keyed
+  independently of the account because registering is free, so a per-user cap cannot bound
+  what many accounts send to one number. Every check runs before anything is recorded, so
+  a refused request spends no budget. The daily cap and the windows count *requests* and
+  survive a failed send; the cooldown is released by it. An authenticator challenge sends
+  nothing, so it spends none of them, and is bounded instead by a per-account lock after
+  `OTP_MAX_VERIFY_ATTEMPTS` wrong codes (`TOTP_LOCKOUT_SECONDS`). The client address is the
+  transport's peer address, never a header read here — proxy trust belongs to uvicorn.
   **Enrolling an authenticator is not enabling it**: `POST /me/totp/enable` stores a
   generated secret and returns the `otpauth://` URI and key once (never logged, never
   persisted client-side, never returned again — `GET /me` exposes only

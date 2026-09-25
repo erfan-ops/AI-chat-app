@@ -162,6 +162,9 @@ Copy `.env.example` to `.env` and fill in real values (never commit `.env`):
 | `RESEND_OTP_SUBJECT` / `RESEND_TIMEOUT_SECONDS` | `Your AI Chat verification code` / `10` | Subject line and request timeout |
 | `OTP_CODE_TTL_SECONDS` / `OTP_RESEND_COOLDOWN_SECONDS` | `120` / `60` | Code lifetime and minimum gap between two codes for one user (per delivery method) |
 | `OTP_MAX_VERIFY_ATTEMPTS` / `OTP_MAX_SENDS_PER_DAY` | `5` / `10` | Wrong guesses allowed per code, and the daily send cap per user (across methods). Authenticator challenges send nothing, so they never spend it |
+| `OTP_RATE_WINDOW_SECONDS` | `900` | The window the two limits below are counted over |
+| `OTP_MAX_SENDS_PER_DESTINATION` / `OTP_MAX_SENDS_PER_IP` | `3` / `10` | Codes sent to one mobile number or email address, and requested from one client address, per window — however many accounts ask. The per-user cap alone cannot bound this, because registering is free |
+| `TOTP_LOCKOUT_SECONDS` | `300` | How long authenticator challenges are locked for an account after `OTP_MAX_VERIFY_ATTEMPTS` wrong codes |
 | `NTP_SERVER` | `ntp.time.ir` | Authoritative time source for authenticator codes (NTP over UDP, not HTTP) |
 | `NTP_SYNC_INTERVAL_SECONDS` / `NTP_RETRY_INTERVAL_SECONDS` | `3600` / `60` | How often the offset is measured, and how soon a failed sync is retried |
 | `NTP_TIMEOUT_SECONDS` / `NTP_MAX_DELAY_SECONDS` | `5.0` / `1.0` | Round-trip timeout, and the largest delay a sample may have to be trusted |
@@ -272,11 +275,25 @@ code leaves the device.
   codes are never known to the server, so nothing about them is stored — a TOTP challenge
   carries no hash and can only be satisfied by the validator that checks it against the
   enrolled secret and the corrected clock.
-- Rejections are **400, never 401** — the client signs out on an authenticated 401. The
-  cooldown is per delivery method (so switching channels is immediate) while the daily
-  send cap is per user and covers *messages* only (so switching buys no extra sends, and an
-  authenticator challenge — which sends nothing — never spends it). The challenge store is
-  in-process: **single worker or sticky sessions** — see `docs/otp-2fa-notes.md`.
+- Rejections are **400, never 401** — the client signs out on an authenticated 401.
+- **Rate limits, in four independent places.** A per-(user, method) resend cooldown
+  (60 s), a per-user daily cap (10 messages), a per-**destination** window (3 codes per
+  15 minutes to one mobile number or email address) and a per-**client address** window
+  (10 requests per 15 minutes). The last two are keyed independently of the account on
+  purpose: a destination and a network are reachable whichever account asks, so a
+  per-user cap cannot bound what a pile of throwaway accounts can send to one number.
+  Refusals are `429` with `Retry-After`. An authenticator challenge sends nothing, so it
+  spends none of the message budgets — it is bounded on the attempt side instead: five
+  wrong codes lock authenticator challenges for that account for five minutes (the lock
+  covers the *authenticator*, not the account — SMS and email still work, and disabling
+  two-step ends it).
+- The **client address** is the transport's peer address, never a header this code
+  reads: `X-Forwarded-For` is spoofable, so the trust decision belongs to the server
+  (`uvicorn --proxy-headers --forwarded-allow-ips=…`). Behind a proxy that is not
+  configured that way every request looks like it came from the proxy, and the window
+  becomes a shared bucket.
+- The challenge store is in-process: **single worker or sticky sessions** — see
+  `docs/otp-2fa-notes.md`.
 
 ## API overview
 

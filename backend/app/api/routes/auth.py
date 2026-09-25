@@ -8,6 +8,7 @@ from fastapi import APIRouter, Depends, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.dependencies import (
+    client_address,
     get_auth_service,
     get_otp_audit,
     get_otp_delivery_service,
@@ -76,6 +77,7 @@ async def login(
     delivery: Annotated[OtpDeliveryService, Depends(get_otp_delivery_service)],
     otp: Annotated[OtpService, Depends(get_otp_service)],
     audit: Annotated[OtpAudit, Depends(get_otp_audit)],
+    client_ip: Annotated[str | None, Depends(client_address)],
 ) -> LoginResponse | OtpRequiredResponse:
     result = await get_auth_service(settings).login(
         db,
@@ -84,6 +86,7 @@ async def login(
         delivery=delivery,
         otp=otp,
         audit=audit,
+        client_ip=client_ip,
     )
     if isinstance(result, OtpChallengeResult):
         return OtpRequiredResponse(
@@ -155,6 +158,7 @@ async def login_switch_otp_method(
     delivery: Annotated[OtpDeliveryService, Depends(get_otp_delivery_service)],
     otp: Annotated[OtpService, Depends(get_otp_service)],
     audit: Annotated[OtpAudit, Depends(get_otp_audit)],
+    client_ip: Annotated[str | None, Depends(client_address)],
 ) -> OtpRequiredResponse:
     result = await get_auth_service(settings).switch_otp_method(
         db,
@@ -163,6 +167,7 @@ async def login_switch_otp_method(
         delivery=delivery,
         otp=otp,
         audit=audit,
+        client_ip=client_ip,
     )
     return OtpRequiredResponse(
         challenge_id=result.challenge_id,

@@ -229,6 +229,61 @@ Taken from the account owner's documentation excerpt:
 - Delivery is not tracked. SMS.ir accepting the request means exactly that — not
   that the handset received it.
 
+## Rate limits on sending
+
+Five limits sit on the send path, and they overlap on purpose — each one covers
+something the others cannot:
+
+| Limit | Default | What it bounds |
+|---|---|---|
+| Resend cooldown, per (user, method) | 60 s | replacing a live challenge per guess |
+| Daily cap, per user | 10 | one account's messages, and their cost |
+| Window, per destination (method + number/address) | 3 / 15 min | messages to one number or address, whichever accounts ask |
+| Window, per client address | 10 / 15 min | requests from one network, however many accounts |
+| Attempts, per challenge | 5 | guesses at a single code (every method) |
+| Lock, per account (authenticator only) | 5 wrong codes → 5 min | guessing at an authenticator, which has no send to throttle |
+
+- **Why the two windows exist.** The per-user daily cap cannot bound a destination: an
+  attacker registers as many accounts as the address they want to flood, and each brings
+  its own allowance. Keying a window on the *destination*, and another on the *network*
+  the requests come from, is what removes the cheapest version of that. They are the only
+  limits that survive an actor who can create accounts at will.
+- **Every check runs before anything is recorded.** A request refused by the cooldown
+  does not also consume the destination's or the address's window, so a refusal never
+  spends the next request's budget. A test pins this: two accounts reach the limit after
+  one refusal only because the refusal did not count.
+- **The windows are not released when a provider refuses a message**, matching the daily
+  cap: they count *requests*, not deliveries. The resend cooldown *is* released, because
+  nothing went out and there is nothing for the user to wait for. Two consequences worth
+  knowing: a provider outage consumes window slots, and a deployment whose provider has no
+  API key is refused **before** the claim (503, nothing spent) so that state cannot
+  masquerade as a rate limit.
+- **The client address is the transport's peer address**, never a header this code reads.
+  `X-Forwarded-For` is trivially spoofable, so trusting it in application code would turn
+  the limit into a formality; the trust decision belongs to the server (uvicorn rewrites
+  the peer from that header only with `--proxy-headers` and the proxy listed in
+  `--forwarded-allow-ips`). **This is the one limit whose usefulness depends on
+  deployment**: behind a proxy configured that way it counts real clients; behind one that
+  is not, every request appears to come from the proxy and the window becomes a shared
+  bucket of 10 requests per 15 minutes for everybody — raise it in that case rather than
+  leave it silently throttling legitimate logins.
+- **Authenticator codes are bounded on the attempt side instead.** A TOTP challenge sends
+  nothing, so it spends none of the message budgets (an authenticator user signing in from
+  several devices must not be locked out of their own account by a limit about money).
+  What it does draw on is the per-(user, method) cooldown, and after
+  `OTP_MAX_VERIFY_ATTEMPTS` wrong codes the account's authenticator is locked for
+  `TOTP_LOCKOUT_SECONDS`. The lock is checked before a code is looked at *and* before a new
+  challenge is handed out, so guessing costs the whole lockout rather than one attempt.
+- **The lock clears the right way.** A correct code clears the failure count (someone who
+  mistyped twice and then got it right is not one slip from a lockout), failures age out
+  with the same rolling window as the send limits, and turning two-step off ends the lock
+  with it — there is nothing left to guess at, and re-enrolling starts clean. The lock is
+  on the *authenticator*, not the account: a user locked out of their app can still sign in
+  with a code sent by SMS or email.
+- Everything above is configurable (`OTP_*`, `TOTP_LOCKOUT_SECONDS`); the defaults are the
+  numbers the project asked for. Like the challenge store, the counters are **in-process**
+  (single worker or sticky sessions).
+
 ## The OTP history (OTP_LOG) is an audit trail, not the store
 
 `OTP_LOG` was added by the project owner (see `docs/database.md`). The application
@@ -337,7 +392,17 @@ consequences:
   exists). This is the same class as the second-contact item above, and the same hardening
   step — re-authentication before changing a second factor — would close both.
 - **Registration is unverified and `/me/otp/enable` sends to a caller-chosen address.**
-  The daily cap is per user, so N throwaway accounts can send N×10 messages a day to any
-  address, from the project's own verified sending domain — with the bounce and
-  complaint exposure that brings. A per-destination or global send cap would bound it;
-  the per-user cap alone does not.
+  The per-destination window (3 per 15 min) and the per-address window (10 per 15 min)
+  bound how much any one address, and any one network, can be made to receive from the
+  project's verified sending domain. What is *not* bounded is the number of **distinct**
+  addresses a determined actor can reach across many networks: the windows remove the
+  cheapest form of this (a handful of accounts aimed at one target) but not a registration
+  farm. Only a global send budget, a verified-contact requirement, or a captcha on
+  registration would; none of the three was asked for.
+- **A refused destination window tells the caller something about that address.** Asking
+  for a code at an address that has already had three requests in the last fifteen minutes
+  answers `429` rather than `200`, so an authenticated prober can learn that *someone*
+  recently used that address — the same class of disclosure as the `409` on a taken
+  contact, and it reveals less (not whether the address is registered, only that it was
+  asked about). If it ever matters, the answer is to make the enable flow's send
+  asynchronous with a uniform response.

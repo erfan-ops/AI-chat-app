@@ -13,7 +13,14 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from app.core.contact import OTP_METHODS, OtpMethod, Purpose, parse_otp_method, stored_secret
+from app.core.contact import (
+    OTP_METHODS,
+    OtpMethod,
+    Purpose,
+    SentOtpMethod,
+    parse_otp_method,
+    stored_secret,
+)
 from app.db.models.user import User
 from app.exceptions import ServiceUnavailableError
 from app.services.email_service import EmailService
@@ -38,6 +45,19 @@ class OtpDeliveryService:
     def is_configured(self, method: OtpMethod) -> bool:
         """Whether that provider has credentials at all."""
         return self._email.is_configured if method == "EMAIL" else self._sms.is_configured
+
+    def require_configured(self, method: SentOtpMethod) -> None:
+        """Fail *before* a request is accounted for, when the provider has no key.
+
+        ``send`` would raise the same thing, but by then the caller has claimed its
+        send slot — and a deployment that cannot send SMS should answer "not
+        configured", not "too many requests" once the rate-limit windows fill up with
+        messages that never left.
+        """
+        if not self.is_configured(method):
+            raise ServiceUnavailableError(
+                "Email is not configured" if method == "EMAIL" else "SMS is not configured"
+            )
 
     def destination_for(self, user: User, method: OtpMethod) -> str | None:
         """The user's verified contact for ``method``, or ``None`` if there is none.

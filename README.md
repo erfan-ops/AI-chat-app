@@ -27,7 +27,9 @@ the API. Nothing is hardcoded or mocked.
   the default and can switch method for a single login without changing it. Enabling
   verifies the second factor first — a stored authenticator secret on its own enables
   nothing — codes expire after two minutes and are single-use, and a code is required
-  before any token is issued. Password-only accounts are unaffected.
+  before any token is issued. Requesting codes is rate-limited per account, per contact
+  and per network, and repeated wrong authenticator codes lock that method for a few
+  minutes without touching the others. Password-only accounts are unaffected.
 - **AI characters** — built-in characters (visible to everyone) plus user-created
   private ones; each carries a system prompt that shapes its personality.
 - **Streaming chat** — AI replies are *truly* incremental: each generated chunk is

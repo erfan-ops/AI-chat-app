@@ -15,6 +15,7 @@ from fastapi import APIRouter, Depends
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.dependencies import (
+    client_address,
     get_current_user,
     get_otp_audit,
     get_otp_delivery_service,
@@ -53,6 +54,7 @@ async def start_otp_enable(
     delivery: Annotated[OtpDeliveryService, Depends(get_otp_delivery_service)],
     otp: Annotated[OtpService, Depends(get_otp_service)],
     audit: Annotated[OtpAudit, Depends(get_otp_audit)],
+    client_ip: Annotated[str | None, Depends(client_address)],
 ) -> OtpChallengeRead:
     destination = body.mobile_number if body.method == "SMS" else body.email
     assert destination is not None  # guaranteed by OtpEnableRequest
@@ -64,6 +66,7 @@ async def start_otp_enable(
         delivery=delivery,
         otp=otp,
         audit=audit,
+        client_ip=client_ip,
     )
     return OtpChallengeRead(
         challenge_id=issued.challenge_id,

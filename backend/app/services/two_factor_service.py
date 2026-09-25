@@ -83,8 +83,13 @@ class TwoFactorService:
         delivery: OtpDeliveryService,
         otp: OtpService,
         audit: OtpAudit,
+        client_ip: str | None = None,
     ) -> ChallengeIssued:
-        """Send a code to ``destination``; nothing is stored until it is verified."""
+        """Send a code to ``destination``; nothing is stored until it is verified.
+
+        ``client_ip`` feeds the per-address send window; ``destination`` feeds the
+        per-destination one (see ``OtpService._reserve``).
+        """
         if user.otp_enabled == 1 and delivery.destination_for(user, method) == destination:
             raise ConflictError("Two-step verification is already enabled for this destination")
         # A contact belongs to one account (UK_USERS_MOBILE_NUMBER / UK_USERS_EMAIL).
@@ -94,8 +99,15 @@ class TwoFactorService:
             db, user_id=user.id, method=method, destination=destination
         )
 
+        # Before the claim, so a provider that cannot send does not spend the send
+        # budget — and answers "not configured" rather than a rate limit.
+        delivery.require_configured(method)
         challenge_id, code = otp.claim(
-            user_id=user.id, purpose="verify_contact", method=method, destination=destination
+            user_id=user.id,
+            purpose="verify_contact",
+            method=method,
+            destination=destination,
+            client_ip=client_ip,
         )
         try:
             # The destination is the one just supplied (it is being verified, so it

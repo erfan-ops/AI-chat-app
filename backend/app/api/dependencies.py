@@ -126,6 +126,21 @@ def get_provider_factory() -> ProviderFactory:
     return create_provider
 
 
+def client_address(request: Request) -> str | None:
+    """The address a request is counted against, or ``None`` if the transport has none.
+
+    The peer address the ASGI server reports — never a header read here, because
+    ``X-Forwarded-For`` is trivially spoofable and trusting it in application code
+    turns a rate limit into a formality. The trust decision belongs to the server:
+    uvicorn rewrites the peer from that header only when it runs with
+    ``--proxy-headers`` and the proxy is listed in ``--forwarded-allow-ips``.
+
+    It exists as a dependency so the per-address send window is fed consistently and
+    can be pointed at a specific address in a test.
+    """
+    return request.client.host if request.client else None
+
+
 async def get_current_user(
     credentials: Annotated[HTTPAuthorizationCredentials | None, Depends(bearer_scheme)],
     request: Request,

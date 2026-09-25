@@ -70,6 +70,11 @@ TEST_SETTINGS = Settings(
     otp_resend_cooldown_seconds=60,
     otp_max_verify_attempts=5,
     otp_max_sends_per_day=10,
+    otp_rate_window_seconds=900,
+    otp_max_sends_per_destination=3,
+    otp_max_sends_per_ip=10,
+    totp_lockout_seconds=300,
+    totp_enroll_ttl_seconds=600,
 )
 
 TEST_PASSWORD = "password123"

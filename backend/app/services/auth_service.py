@@ -155,8 +155,15 @@ class AuthService:
         delivery: OtpDeliveryService,
         otp: OtpService,
         audit: OtpAudit,
+        client_ip: str | None = None,
     ) -> LoginResult | OtpChallengeResult:
-        """Authenticate a user, or start the second step when 2FA is enabled."""
+        """Authenticate a user, or start the second step when 2FA is enabled.
+
+        ``client_ip`` is the address the request came from, which the per-address send
+        window counts. It is the transport's peer address (never a header this code
+        reads), so behind a proxy the server must be configured to report the real
+        client — see docs/otp-2fa-notes.md.
+        """
         if self._attempts.is_locked(username):
             raise RateLimitError("Too many failed login attempts; try again later")
         user = await UserRepository(db).get_by_username(username)
@@ -174,7 +181,9 @@ class AuthService:
         if user.otp_enabled == 1:
             # No token, no last_login_at, no commit: the password was right, but
             # nothing is authenticated until the code is verified.
-            return await self._start_otp_login(user, delivery=delivery, otp=otp, audit=audit)
+            return await self._start_otp_login(
+                user, delivery=delivery, otp=otp, audit=audit, client_ip=client_ip
+            )
         user.last_login_at = utcnow()
         await db.commit()
         token, expires_in = self._tokens.create_access_token(user.id)
@@ -261,6 +270,7 @@ class AuthService:
         audit: OtpAudit,
         method: OtpMethod | None = None,
         replaces: str | None = None,
+        client_ip: str | None = None,
     ) -> OtpChallengeResult:
         """Send the login code to ``method`` (default: the saved preference).
 
@@ -294,8 +304,15 @@ class AuthService:
             raise ServiceUnavailableError("Two-step verification is unavailable for this account")
 
         destination = delivery.resolve(user, chosen)
+        # Before the claim, so a provider that cannot send does not spend the send
+        # budget — and answers "not configured" rather than a rate limit.
+        delivery.require_configured(chosen)
         challenge_id, code = otp.claim(
-            user_id=user.id, purpose="login", method=chosen, destination=destination.address
+            user_id=user.id,
+            purpose="login",
+            method=chosen,
+            destination=destination.address,
+            client_ip=client_ip,
         )
         try:
             await delivery.send(destination, code=code, user=user, purpose="login")
@@ -364,6 +381,7 @@ class AuthService:
         delivery: OtpDeliveryService,
         otp: OtpService,
         audit: OtpAudit,
+        client_ip: str | None = None,
     ) -> OtpChallengeResult:
         """Send the login code through ``method`` instead, for this login only.
 
@@ -382,5 +400,11 @@ class AuthService:
             raise BadRequestError("Two-step verification is no longer enabled")
 
         return await self._start_otp_login(
-            user, delivery=delivery, otp=otp, audit=audit, method=method, replaces=challenge_id
+            user,
+            delivery=delivery,
+            otp=otp,
+            audit=audit,
+            method=method,
+            replaces=challenge_id,
+            client_ip=client_ip,
         )
