@@ -88,7 +88,10 @@ async function startChat() {
 
 try {
   console.log('\n1. App starts → auth screen')
-  await page.goto(APP_URL, { waitUntil: 'networkidle' })
+  // Not `networkidle`: the auth page pulls Google's Identity Services script from
+  // accounts.google.com, and a slow external host keeps the page from ever going idle.
+  await page.goto(APP_URL, { waitUntil: 'domcontentloaded' })
+  await page.getByRole('tab', { name: 'Sign in' }).waitFor({ timeout: 15000 })
   check('page renders the sign-in screen', await page.getByRole('tab', { name: 'Sign in' }).isVisible())
 
   console.log('\n2. Create account')
@@ -139,7 +142,7 @@ try {
   check('assistant reply arrived', true)
 
   console.log('\n7. Reply persists across a reload')
-  await page.reload({ waitUntil: 'networkidle' })
+  await page.reload({ waitUntil: 'domcontentloaded' })
   await page
     .getByText('Tell me one fun fact about space.', { exact: false })
     .first()

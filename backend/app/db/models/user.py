@@ -21,7 +21,7 @@ class User(Base):
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     username: Mapped[str] = mapped_column(String(100), unique=True)
     # Argon2id PHC string — the application is the source of the hashing scheme.
-    password_hash: Mapped[str] = mapped_column(String(255))
+    password_hash: Mapped[str | None] = mapped_column(String(255))
     display_name: Mapped[str | None] = mapped_column(String(100))
     default_model_id: Mapped[int | None] = mapped_column(Integer, ForeignKey("AI_MODELS.id"))
     status: Mapped[str] = mapped_column(String(20))
@@ -39,6 +39,12 @@ class User(Base):
     # app/core/email.py. Only ever written after a code sent to it came back.
     # Unique (UK_USERS_EMAIL) for the same reason as the mobile number.
     email: Mapped[str | None] = mapped_column(String(200), unique=True)
+    # Sign in with Google: Google's stable `sub` claim for this account's Google
+    # identity. NULL for every account that has never used Google to sign in. Written
+    # once, when a Google sign-in creates the account; later sign-ins only look it up.
+    # Unique (UK_USERS_GOOGLE_SUB): one application account per Google identity, so a
+    # race that slips past the lookup still cannot create a second one.
+    google_sub: Mapped[str | None] = mapped_column(String(255), unique=True)
     # Profile picture: the Cloudinary secure_url of the 512x512 master the browser
     # uploaded (see app/services/cloudinary_service.py — the image never passes
     # through the API). Display sizes are derived from it at delivery time.
@@ -53,6 +59,16 @@ class User(Base):
     preferred_otp_method: Mapped[str | None] = mapped_column(String(20))
     # Matches the DB default 'ROLE_user'; the app never inserts a value.
     role: Mapped[str] = mapped_column(String(20), server_default=text("'ROLE_user'"))
+
+    @property
+    def has_password(self) -> bool:
+        """Whether this account can be signed into with a password.
+
+        False for an account created through Google that has never set one: the client
+        needs the answer to know whether to ask for a current password, and it says
+        nothing about what the password is.
+        """
+        return bool(self.password_hash)
 
     @property
     def authenticator_enrolled(self) -> bool:

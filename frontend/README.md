@@ -81,10 +81,12 @@ src/
   components/              # shared UI: Avatar, Modal, Spinner, EmptyState, ErrorState,
                            #   ToastHost (+ toastStore), inline SVG icon set
   features/
-    auth/AuthPage          # sign-in / account creation (password typed twice), plus the
+    auth/AuthPage          # sign-in / account creation (password typed twice), the
                            #   code step for accounts with two-step verification (a code we
                            #   sent or one from an authenticator app, and the switch to
-                           #   another method)
+                           #   another method), and the Google button
+    auth/GoogleSignInButton # loads Google Identity Services on demand, hosts its own
+                           #   button, and forwards the credential it returns
     conversations/         # sidebar, list items (rename/delete), infinite list query
     characters/            # cached character lookup (avatars), create + profile dialogs,
                            #   avatar picker (crop → upload to Cloudinary)
@@ -116,8 +118,8 @@ its family at the front of the `body` stack.
 
 ## API integration notes
 
-- **Auth**: all endpoints except `/auth/register`, `/auth/login`, `/auth/login/otp` and
-  `/auth/login/otp/method` need a JWT Bearer token. The client attaches it automatically.
+- **Auth**: all endpoints except `/auth/register`, `/auth/login`, `/auth/login/otp`,
+  `/auth/login/otp/method` and `/auth/google` need a JWT Bearer token. The client attaches it automatically.
   `AppShell` also refreshes the profile once on load (`GET /me`), because the session —
   and the user object inside it — is persisted in localStorage and can outlive a deploy
   that adds a field to it; until that refresh lands, a value the UI cannot interpret is
@@ -130,6 +132,15 @@ its family at the front of the `body` stack.
   only arrives from `POST /auth/login/otp`. A wrong or expired code is
   a 400 — never a 401, because this client would treat that as an expired session and
   sign the user out.
+- **Sign in with Google** uses Google's own UI (Identity Services), not a custom account
+  picker: `GoogleSignInButton` loads `accounts.google.com/gsi/client` on demand — nothing
+  is fetched, and no button is rendered, when `VITE_GOOGLE_CLIENT_ID` is unset — hosts
+  Google's button, and posts the credential it returns to `/auth/google`. That credential
+  is never decoded here, and the reply is the same `LoginResponse | OtpRequiredResponse`
+  the password form already handles, so a Google sign-in lands in the same session state
+  (and the same code prompt, for an account with two-step verification on). The button is
+  re-rendered when the theme changes (`filled_black` in dark, `outline` in light), since
+  Google bakes the colours into the element it builds.
 - **Settings**: the sidebar footer opens a settings dialog — username, display name and
   default model (`PATCH /me`), password (`POST /me/password`, with the new password typed
   twice and matched in the form before it is sent), theme, and two-step verification

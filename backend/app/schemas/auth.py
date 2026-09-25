@@ -29,6 +29,17 @@ class LoginRequest(BaseModel):
     password: str = Field(min_length=1, max_length=128)
 
 
+class GoogleSignInRequest(BaseModel):
+    """Body for POST /auth/google.
+
+    ``credential`` is the ID token Google Identity Services hands the browser. It is
+    opaque to the client: this API verifies it against Google's keys before believing
+    anything in it (see app/services/google_auth_service.py).
+    """
+
+    credential: str = Field(min_length=16, max_length=8192)
+
+
 class PasswordChangeRequest(BaseModel):
     """Body for POST /me/password.
 
@@ -36,7 +47,11 @@ class PasswordChangeRequest(BaseModel):
     request arrives there is only one new password to set.
     """
 
-    current_password: str = Field(min_length=1, max_length=128)
+    # May be empty for an account that has no password yet (created through Google):
+    # that request sets a *first* password rather than changing one, and there is
+    # nothing to confirm. For an account that has one, an empty value simply fails to
+    # verify — see AuthService.change_password.
+    current_password: str = Field(default="", max_length=128)
     # Same rules as registration, since it is the same credential.
     new_password: str = Field(min_length=8, max_length=128)
 

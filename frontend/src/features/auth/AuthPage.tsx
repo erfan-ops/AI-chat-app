@@ -1,14 +1,15 @@
 import { useState } from 'react'
 import type { FormEvent } from 'react'
 import { useMutation } from '@tanstack/react-query'
-import { login, loginWithOtp, register, switchOtpMethod } from '../../api/auth'
+import { login, loginWithOtp, register, signInWithGoogle, switchOtpMethod } from '../../api/auth'
 import { setSession } from '../../session/authSession'
 import { ApiError } from '../../api/client'
 import { errorMessage } from '../../utils/errors'
 import { ChatBubbleIcon, SparklesIcon } from '../../components/Icons'
 import { Spinner } from '../../components/Spinner'
 import { otpMethodLabel, parseOtpMethod } from '../../utils/otpMethod'
-import type { OtpMethod, OtpRequiredResponse } from '../../types/api'
+import type { LoginResponse, OtpMethod, OtpRequiredResponse } from '../../types/api'
+import { GoogleSignInButton } from './GoogleSignInButton'
 import styles from './AuthPage.module.css'
 
 type Mode = 'login' | 'register'
@@ -31,6 +32,21 @@ export function AuthPage() {
   const [challenge, setChallenge] = useState<OtpRequiredResponse | null>(null)
   const [code, setCode] = useState('')
 
+  /** Every way in ends here: a token becomes a session, a challenge becomes the code
+   *  prompt. Password, Google and the second step share it, so the rest of the app
+   *  cannot tell which provider was used. */
+  function completeSignIn(response: LoginResponse | OtpRequiredResponse) {
+    // Narrow before storing: an OTP challenge has no token, and setSession would
+    // otherwise persist an empty session and render a signed-in shell.
+    if ('otp_required' in response) {
+      setChallenge(response)
+      setCode('')
+      setPassword('')
+      return
+    }
+    setSession(response)
+  }
+
   const submit = useMutation({
     mutationFn: async () => {
       if (mode === 'register') {
@@ -43,21 +59,20 @@ export function AuthPage() {
       // Registering only creates the account — signing in returns the token.
       return login({ username: username.trim(), password })
     },
-    onSuccess: (response) => {
-      // Narrow before storing: an OTP challenge has no token, and setSession would
-      // otherwise persist an empty session and render a signed-in shell.
-      if ('otp_required' in response) {
-        setChallenge(response)
-        setCode('')
-        setPassword('')
-        return
-      }
-      setSession(response)
-    },
+    onSuccess: completeSignIn,
     onError: (err) => {
       setError(errorMessage(err))
       if (err instanceof ApiError && err.status === 401) setPassword('')
     },
+  })
+
+  const google = useMutation({
+    mutationFn: (credential: string) => signInWithGoogle({ credential }),
+    onSuccess: completeSignIn,
+    // A revoked or misconfigured client, an account whose email is already taken — all
+    // of them arrive as ordinary API errors, shown in the same banner as a wrong
+    // password.
+    onError: (err) => setError(errorMessage(err)),
   })
 
   const verify = useMutation({
@@ -132,7 +147,7 @@ export function AuthPage() {
     setConfirmPassword('')
   }
 
-  const busy = submit.isPending
+  const busy = submit.isPending || google.isPending
 
   return (
     <main className={styles.page}>
@@ -363,6 +378,24 @@ export function AuthPage() {
               )}
             </button>
           </form>
+          )}
+
+          {/* Offered on both tabs: Google signs in *or* creates the account, so the
+              distinction the tabs draw does not apply to it. Hidden entirely when no
+              client id is configured (GoogleSignInButton returns nothing). */}
+          {!challenge && (
+            <>
+              <div className={styles.divider}>
+                <span>or</span>
+              </div>
+              <GoogleSignInButton
+                onCredential={(credential) => {
+                  setError(null)
+                  google.mutate(credential)
+                }}
+                disabled={busy}
+              />
+            </>
           )}
         </section>
       </div>

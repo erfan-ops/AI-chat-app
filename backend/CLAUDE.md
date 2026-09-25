@@ -100,6 +100,22 @@ and uses the `AI_API_KEY` / `AI_BASE_URL` / `AI_MODEL` env fallbacks.
 - The login throttle (5 failures → 60 s, `429` + `Retry-After`) is in-memory per
   process — not shared across workers. `POST /me/password` shares that counter, so a
   wrong current password costs the same budget as a wrong login.
+- **Sign in with Google** (`app/services/google_auth_service.py`): the browser gets an
+  ID token from Google Identity Services and posts it to `POST /auth/google`, which
+  verifies it with `google.oauth2.id_token` — signature, issuer, audience
+  (`GOOGLE_CLIENT_ID`), expiry — before reading any claim; the key set is cached for an
+  hour (`CachedKeySet`). `sub` identifies the account, never the email: an unknown `sub`
+  creates the user (`GOOGLE_SUB`, verified `EMAIL`, `DISPLAY_NAME`, and an `AVATAR_URL`
+  copied into Cloudinary), a known one is signed in with **nothing but `last_login_at`
+  changed** — display name and picture are the user's own once the account exists. An
+  email that already has an account is **refused (409), never linked**: that would be a
+  way into a password account without the password. A `TransportError` fetching Google's
+  keys is a 503, while every other verification failure is a 400 (google-auth's
+  `MalformedError` subclasses `ValueError`, not `TransportError`). The session itself
+  comes from `AuthService._issue_session`, the same path password logins use, so 2FA
+  still applies. Google-created accounts have `PASSWORD_HASH` NULL (password login
+  refused; they can set one from settings). Decisions and open items:
+  `docs/google-signin-notes.md`.
 - **Two-step verification** (`app/services/two_factor_service.py`, `otp_service.py`,
   `otp_delivery.py`, `sms_service.py`, `email_service.py`, `totp_service.py`,
   `time_service.py`): the second step never issues a token — `POST /auth/login` returns

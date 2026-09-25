@@ -42,6 +42,9 @@ class UserRead(BaseModel):
     # Profile picture: the Cloudinary URL the client uploaded. Resized at delivery
     # (`utils/cloudinary.ts`), so this is the master, not a per-size variant.
     avatar_url: str | None = None
+    # False for an account created through Google that has never set a password, so
+    # the settings form knows whether to ask for the current one.
+    has_password: bool = True
 
     @field_validator("mobile_number", mode="before")
     @classmethod

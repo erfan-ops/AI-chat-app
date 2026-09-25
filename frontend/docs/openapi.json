@@ -98,6 +98,65 @@
     }
    }
   },
+  "/auth/google": {
+   "post": {
+    "tags": [
+     "auth"
+    ],
+    "summary": "Sign in with Google, creating the account on first use",
+    "description": "Exchanges a Google Identity Services credential (the ID token the browser received from Google) for the same access token `POST /auth/login` returns. The credential is verified against Google's published keys \u2014 signature, issuer, audience and expiry \u2014 before anything in it is believed; the Google `sub` claim identifies the account, never the email address.\n\nAn unknown Google account creates a user here, initialised from the verified claims (email, name, and a Cloudinary copy of the profile picture) with no password. A known one signs in unchanged: display name and picture are never rewritten by a later Google sign-in. An email that already belongs to an account created another way is refused with `409` rather than linked.\n\nWhen the account has two-step verification on, no token is issued: the reply carries `otp_required` and a `challenge_id`, exactly as a password login does. Answers `503` when Google sign-in is not configured.",
+    "operationId": "login_with_google_auth_google_post",
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/GoogleSignInRequest"
+       }
+      }
+     },
+     "required": true
+    },
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {
+         "anyOf": [
+          {
+           "$ref": "#/components/schemas/LoginResponse"
+          },
+          {
+           "$ref": "#/components/schemas/OtpRequiredResponse"
+          }
+         ],
+         "title": "Response Login With Google Auth Google Post"
+        }
+       }
+      }
+     },
+     "400": {
+      "description": "The credential is missing, expired, or not from Google"
+     },
+     "409": {
+      "description": "That email already belongs to an account"
+     },
+     "503": {
+      "description": "Google sign-in is not configured, or Google is unreachable"
+     },
+     "422": {
+      "description": "Validation Error",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
   "/auth/login/otp": {
    "post": {
     "tags": [
@@ -2063,6 +2122,22 @@
     "title": "ConversationUpdate",
     "description": "Body for PATCH /conversations/{id}."
    },
+   "GoogleSignInRequest": {
+    "properties": {
+     "credential": {
+      "type": "string",
+      "maxLength": 8192,
+      "minLength": 16,
+      "title": "Credential"
+     }
+    },
+    "type": "object",
+    "required": [
+     "credential"
+    ],
+    "title": "GoogleSignInRequest",
+    "description": "Body for POST /auth/google.\n\n``credential`` is the ID token Google Identity Services hands the browser. It is\nopaque to the client: this API verifies it against Google's keys before believing\nanything in it (see app/services/google_auth_service.py)."
+   },
    "HTTPValidationError": {
     "properties": {
      "detail": {
@@ -2753,8 +2828,8 @@
      "current_password": {
       "type": "string",
       "maxLength": 128,
-      "minLength": 1,
-      "title": "Current Password"
+      "title": "Current Password",
+      "default": ""
      },
      "new_password": {
       "type": "string",
@@ -2765,7 +2840,6 @@
     },
     "type": "object",
     "required": [
-     "current_password",
      "new_password"
     ],
     "title": "PasswordChangeRequest",
@@ -3187,6 +3261,11 @@
        }
       ],
       "title": "Avatar Url"
+     },
+     "has_password": {
+      "type": "boolean",
+      "title": "Has Password",
+      "default": true
      }
     },
     "type": "object",

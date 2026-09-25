@@ -152,6 +152,7 @@ Copy `.env.example` to `.env` and fill in real values (never commit `.env`):
 | `AI_DEFAULT_CONTEXT_CHARS` | `16000` | Default token budget ≈ chars/4 |
 | `AI_TEMPERATURE` / `AI_MAX_TOKENS` | `0.8` / `1024` | Generation parameters |
 | `AI_STREAM_TIMEOUT_SECONDS` | `120` | Provider read timeout |
+| `GOOGLE_CLIENT_ID` | *(empty)* | OAuth client id for Sign in with Google. Public by design; the backend checks every credential's audience against it. **No client secret**: the browser gets a signed ID token from Google and this API verifies it against Google's keys, so nothing is exchanged. Unset disables the feature (`POST /auth/google` → 503, and the frontend renders no button) |
 | `CLOUDINARY_CLOUD_NAME` / `CLOUDINARY_API_KEY` / `CLOUDINARY_API_SECRET` | *(empty)* | Cloudinary credentials for signed avatar uploads (characters and user profile pictures). The secret stays server-side; unset disables the feature (`POST /cloudinary/signature` → 503) |
 | `SMS_IR_API_KEY` | *(empty)* | SMS.ir API key for two-step codes. Unset disables the SMS channel (`503 SMS is not configured`) |
 | `SMS_IR_TEMPLATE_ID` | `601570` | SMS.ir "send verify code" template; its parameters are `USERNAME` and `CODE` |
@@ -244,6 +245,29 @@ flow characters use, with the API contributing only a signature:
 
 Display sizes are Cloudinary transformations applied on delivery, not stored variants.
 
+### Sign in with Google
+
+`POST /auth/google` takes the credential Google Identity Services hands the browser
+(an ID token) and returns exactly what `POST /auth/login` returns — a token, or an
+`otp_required` challenge when the account has two-step verification on.
+
+- **Verified, not decoded.** `google.oauth2.id_token.verify_oauth2_token` checks the
+  signature against Google's published keys, the issuer, the audience (this
+  application's `GOOGLE_CLIENT_ID`) and the expiry before any claim is read. Google's
+  keys are cached for an hour; a key set that cannot be fetched is `503`, while a
+  credential that fails verification is `400`.
+- **`sub` identifies the account**, never the email address. On first sight of a `sub`
+  the account is created with `GOOGLE_SUB`, the verified `EMAIL`, `DISPLAY_NAME` and an
+  `AVATAR_URL`; the picture is downloaded from Google (512x512) and copied into this
+  account's Cloudinary rather than linked to.
+- **A later sign-in changes nothing but `last_login_at`** — display name, picture and
+  every other profile field are the user's own once the account exists.
+- **An email that already has an account is refused with `409`**, not linked: adopting
+  it would be a way into a password-protected account without the password.
+- Google-created accounts have no password (`PASSWORD_HASH` NULL, password login
+  refused) and can set one from settings without proving a current one.
+- Decisions and open items: `docs/google-signin-notes.md`.
+
 ### Two-step verification (one-time codes)
 
 A second factor is delivered as a one-time code, by **SMS**, by **email**, or from an
@@ -320,6 +344,7 @@ code leaves the device.
 |---|---|
 | `POST /auth/register` | Create account (public) |
 | `POST /auth/login` | Get JWT access token (public); with two-step on, returns `otp_required` + a `challenge_id` instead |
+| `POST /auth/google` | Sign in with a Google Identity Services credential (public); creates the account on first use, and returns the same payload as `/auth/login` |
 | `POST /auth/login/otp` | Complete a two-step login with the code (public) |
 | `POST /auth/login/otp/method` | Send this login's code through the other channel instead (public) |
 | `GET /me` · `PATCH /me` | Profile; update username / display name / default model / `preferred_otp_method` / `avatar_url` (a taken username is `409`; an explicit `null` avatar removes the picture) |

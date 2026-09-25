@@ -55,6 +55,15 @@ class Settings(BaseSettings):
     cloudinary_api_key: str = ""
     cloudinary_api_secret: str = ""
 
+    # Sign in with Google (Google Identity Services). The client id is the *public*
+    # half of the OAuth client — the frontend uses it, and the backend checks that
+    # every credential was minted for it (the token's `aud`). No client secret is
+    # needed: the browser receives a signed ID token from Google and this API
+    # verifies it against Google's published keys, so no code is exchanged and no
+    # secret ever has to exist here. Empty disables the feature (503) — the same
+    # convention as Cloudinary/SMS/email above.
+    google_client_id: str = ""
+
     # SMS.ir one-time codes for two-step verification. An empty API key disables
     # the feature: the OTP endpoints answer 503, exactly like Cloudinary above.
     # The template is a "send verify code" template whose parameters are USERNAME

@@ -15,20 +15,43 @@ function check(name, ok, extra = '') {
 }
 
 const browser = await chromium.launch({ channel: 'chrome', headless: true })
+
+/** The lines an option renders, trimmed and without blanks. The character option
+ *  puts its name *last* (under the avatar initial); the model option puts it *first*
+ *  (above its context details) — hence the two helpers rather than one rule. */
+const lines = (text) => text.split(/\r?\n/).map((line) => line.trim()).filter(Boolean)
+const nameOf = (text) => lines(text)[0]
+const characterNameOf = (text) => lines(text).pop()
 const username = `lay_${Date.now().toString(36)}`
 const password = 'lay-password-123'
 
 const page = await browser.newPage({ viewport: { width: 1366, height: 860 } })
-await page.goto(APP_URL, { waitUntil: 'networkidle' })
+await page.goto(APP_URL, { waitUntil: 'domcontentloaded' })
+await page.waitForLoadState('load')
 await page.getByRole('tab', { name: 'Create account' }).click()
 await page.getByLabel('Username').fill(username)
-await page.getByLabel('Password').fill(password)
+// Exact, or "Password" also matches the register form's "Confirm password".
+await page.getByLabel('Password', { exact: true }).fill(password)
+await page.getByLabel('Confirm password').fill(password)
 await page.getByRole('button', { name: 'Create account' }).click()
 await page.waitForSelector('aside', { timeout: 15000 })
 await page.getByRole('button', { name: 'New chat' }).click()
-await page.getByRole('radio', { name: 'Maya', exact: true }).click()
+await page.getByText('Who do you want to talk to?').waitFor({ timeout: 10000 })
+const characters = page.getByRole('radio')
+await characters.first().waitFor({ timeout: 10000 })
+// The option shows an avatar initial above the name, so the name is the last line.
+const characterName = characterNameOf(await characters.first().innerText())
+await characters.first().click()
+await page.getByRole('button', { name: 'Next' }).click()
+// The model list is the developer's data too, so the header check follows whatever
+// the script actually picked rather than a name that drifts.
+const models = page.getByRole('radio')
+await models.first().waitFor({ timeout: 10000 })
+const modelName = nameOf(await models.first().innerText())
+await models.first().click()
+await page.getByRole('button', { name: 'Next' }).click()
 await page.getByRole('button', { name: 'Start chatting' }).click()
-await page.getByText('Say hello to Maya').waitFor({ timeout: 10000 })
+await page.getByText(`Say hello to ${characterName}`).waitFor({ timeout: 10000 })
 
 // Desktop geometry
 const asideBox = await page.locator('aside').boundingBox()
@@ -36,14 +59,14 @@ check('sidebar is 320px wide', asideBox && Math.round(asideBox.width) === 320, a
 check('no horizontal overflow (desktop)', await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth))
 
 // Send a message; capture state DURING the stream and AFTER it.
-const composer = page.getByLabel('Message Maya')
+const composer = page.getByLabel(`Message ${characterName}`)
 await composer.fill('A quick hello!')
 await composer.press('Enter')
 await page.getByText('A quick hello!', { exact: false }).first().waitFor({ timeout: 10000 })
 
 // During the stream: composer disabled + typing indicator present.
 try {
-  await page.getByText('Maya is typing…').first().waitFor({ timeout: 8000 })
+  await page.getByText(/is typing/).first().waitFor({ timeout: 8000 })
   check('typing indicator shows while streaming', true)
 } catch {
   // The reply may have finished too fast to observe — verify after-the-fact instead.
@@ -102,8 +125,8 @@ const hasDay = await page.locator('span', { hasText: /^Today$/ }).count()
 check('day separator rendered', hasDay > 0)
 
 // Header shows the character name and model (scoped to the chat header).
-check('chat header shows character name', await page.locator('header h1', { hasText: 'Maya' }).isVisible())
-check('chat header shows model name', await page.locator('header p', { hasText: 'DeepSeek v4 Pro' }).isVisible())
+check('chat header shows character name', await page.locator('header h1', { hasText: characterName }).isVisible())
+check('chat header shows model name', await page.locator('header p', { hasText: modelName }).isVisible())
 
 // Focus visibility: keyboard focus on the textarea highlights the composer
 // container with a focus ring.
@@ -115,27 +138,29 @@ check('visible focus style on composer', focusShadow !== 'none', focusShadow.sli
 
 // --- Dark theme ---
 const dark = await browser.newPage({ viewport: { width: 1366, height: 860 }, colorScheme: 'dark' })
-await dark.goto(APP_URL, { waitUntil: 'networkidle' })
+await dark.goto(APP_URL, { waitUntil: 'domcontentloaded' })
+await dark.waitForLoadState('load')
 await dark.getByRole('tab', { name: 'Sign in' }).click()
 await dark.getByLabel('Username').fill(username)
-await dark.getByLabel('Password').fill(password)
+await dark.getByLabel('Password', { exact: true }).fill(password)
 await dark.getByRole('button', { name: 'Sign in' }).click()
 await dark.waitForSelector('aside', { timeout: 15000 })
-await dark.getByTitle('Maya').first().click()
+await dark.getByTitle(characterName).first().click()
 await dark.getByText('A quick hello!', { exact: false }).first().waitFor({ timeout: 15000 })
 const darkBg = await dark.evaluate(() => getComputedStyle(document.body).backgroundColor)
 check('dark theme applied (body uses dark token)', darkBg === 'rgb(12, 15, 20)', darkBg)
 
 // --- Mobile: no horizontal overflow in both states ---
 const mobile = await browser.newPage({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true })
-await mobile.goto(APP_URL, { waitUntil: 'networkidle' })
+await mobile.goto(APP_URL, { waitUntil: 'domcontentloaded' })
+await mobile.waitForLoadState('load')
 await mobile.getByRole('tab', { name: 'Sign in' }).click()
 await mobile.getByLabel('Username').fill(username)
-await mobile.getByLabel('Password').fill(password)
+await mobile.getByLabel('Password', { exact: true }).fill(password)
 await mobile.getByRole('button', { name: 'Sign in' }).click()
 await mobile.waitForSelector('aside', { timeout: 15000 })
 check('no horizontal overflow (mobile sidebar)', await mobile.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 1))
-await mobile.getByTitle('Maya').first().click()
+await mobile.getByTitle(characterName).first().click()
 await mobile.getByText('A quick hello!', { exact: false }).first().waitFor({ timeout: 15000 })
 check('no horizontal overflow (mobile chat)', await mobile.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 1))
 const bubbleBox = await mobile.locator('div[class*="bubbleMine"]', { hasText: 'A quick hello!' }).boundingBox()

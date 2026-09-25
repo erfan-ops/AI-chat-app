@@ -1,5 +1,6 @@
 import { apiRequest } from './client'
 import type {
+  GoogleSignInRequest,
   LoginOtpMethodRequest,
   LoginRequest,
   LoginResponse,
@@ -36,6 +37,20 @@ export function login(request: LoginRequest): Promise<LoginResponse | OtpRequire
  *  yet, and a 401 here would sign the caller out of an unrelated session. */
 export function loginWithOtp(request: OtpVerifyRequest): Promise<LoginResponse> {
   return apiRequest<LoginResponse>('/auth/login/otp', {
+    method: 'POST',
+    body: request,
+    authenticated: false,
+  })
+}
+
+/** Sign in with Google: exchanges the credential Google Identity Services handed the
+ *  browser for the same access token {@link login} returns — or an OTP challenge, when
+ *  the account has two-step verification on. Unauthenticated: there is no token yet.
+ *
+ *  The credential is opaque here. Only the backend can verify it, and it does so
+ *  against Google's keys before believing anything in it. */
+export function signInWithGoogle(request: GoogleSignInRequest): Promise<LoginResponse | OtpRequiredResponse> {
+  return apiRequest<LoginResponse | OtpRequiredResponse>('/auth/google', {
     method: 'POST',
     body: request,
     authenticated: false,

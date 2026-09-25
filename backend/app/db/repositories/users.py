@@ -25,6 +25,16 @@ class UserRepository:
         stmt = select(User).where(User.mobile_number == mobile)
         return (await self._db.scalars(stmt)).first()
 
+    async def get_by_google_sub(self, google_sub: str) -> User | None:
+        """The account that signed in with this Google identity, if any.
+
+        ``sub`` is Google's stable per-client identifier, and the only key a Google
+        sign-in may resolve an account by — never the email address, which can be
+        reassigned by a provider.
+        """
+        stmt = select(User).where(User.google_sub == google_sub)
+        return (await self._db.scalars(stmt)).first()
+
     async def get_by_email(self, email: str) -> User | None:
         """The account holding that verified email address, if any.
 

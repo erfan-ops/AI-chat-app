@@ -18,7 +18,8 @@ const password = 'shot-password-123'
 
 // --- Desktop, light ---
 const page = await browser.newPage({ viewport: { width: 1366, height: 860 } })
-await page.goto(APP_URL, { waitUntil: 'networkidle' })
+await page.goto(APP_URL, { waitUntil: 'domcontentloaded' })
+await page.waitForLoadState('load')
 await page.getByRole('tab', { name: 'Create account' }).click()
 await page.getByLabel('Username').fill(username)
 await page.getByLabel('Password').fill(password)
@@ -59,7 +60,8 @@ const dark = await browser.newPage({
   viewport: { width: 1366, height: 860 },
   colorScheme: 'dark',
 })
-await dark.goto(APP_URL, { waitUntil: 'networkidle' })
+await dark.goto(APP_URL, { waitUntil: 'domcontentloaded' })
+await dark.waitForLoadState('load')
 await dark.getByRole('tab', { name: 'Sign in' }).click()
 await dark.getByLabel('Username').fill(username)
 await dark.getByLabel('Password').fill(password)
@@ -75,7 +77,8 @@ const mobile = await browser.newPage({
   isMobile: true,
   hasTouch: true,
 })
-await mobile.goto(APP_URL, { waitUntil: 'networkidle' })
+await mobile.goto(APP_URL, { waitUntil: 'domcontentloaded' })
+await mobile.waitForLoadState('load')
 await mobile.getByRole('tab', { name: 'Sign in' }).click()
 await mobile.getByLabel('Username').fill(username)
 await mobile.getByLabel('Password').fill(password)

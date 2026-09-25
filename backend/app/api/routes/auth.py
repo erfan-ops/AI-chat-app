@@ -10,6 +10,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.api.dependencies import (
     client_address,
     get_auth_service,
+    get_cloudinary_service,
+    get_google_auth_service,
     get_otp_audit,
     get_otp_delivery_service,
     get_otp_service,
@@ -19,6 +21,7 @@ from app.core.config import Settings, get_settings
 from app.db.database import get_db
 from app.db.models.user import User
 from app.schemas.auth import (
+    GoogleSignInRequest,
     LoginOtpMethodRequest,
     LoginOtpRequest,
     LoginRequest,
@@ -28,6 +31,8 @@ from app.schemas.auth import (
 )
 from app.schemas.users import UserRead
 from app.services.auth_service import LoginResult, OtpChallengeResult
+from app.services.cloudinary_service import CloudinaryService
+from app.services.google_auth_service import GoogleAuthService
 from app.services.otp_audit import OtpAudit
 from app.services.otp_delivery import OtpDeliveryService
 from app.services.otp_service import OtpService
@@ -83,6 +88,66 @@ async def login(
         db,
         username=body.username,
         password=body.password,
+        delivery=delivery,
+        otp=otp,
+        audit=audit,
+        client_ip=client_ip,
+    )
+    if isinstance(result, OtpChallengeResult):
+        return OtpRequiredResponse(
+            challenge_id=result.challenge_id,
+            code_expires_in_seconds=result.expires_in_seconds,
+            delivery_method=result.method,
+            alternative_method=result.alternative_method,
+        )
+    return LoginResponse(
+        access_token=result.access_token,
+        expires_in=result.expires_in_minutes,
+        user=UserRead.model_validate(result.user),
+    )
+
+
+@router.post(
+    "/google",
+    response_model=LoginResponse | OtpRequiredResponse,
+    summary="Sign in with Google, creating the account on first use",
+    description=(
+        "Exchanges a Google Identity Services credential (the ID token the browser "
+        "received from Google) for the same access token `POST /auth/login` returns. "
+        "The credential is verified against Google's published keys — signature, "
+        "issuer, audience and expiry — before anything in it is believed; the Google "
+        "`sub` claim identifies the account, never the email address.\n\n"
+        "An unknown Google account creates a user here, initialised from the verified "
+        "claims (email, name, and a Cloudinary copy of the profile picture) with no "
+        "password. A known one signs in unchanged: display name and picture are never "
+        "rewritten by a later Google sign-in. An email that already belongs to an "
+        "account created another way is refused with `409` rather than linked.\n\n"
+        "When the account has two-step verification on, no token is issued: the reply "
+        "carries `otp_required` and a `challenge_id`, exactly as a password login "
+        "does. Answers `503` when Google sign-in is not configured."
+    ),
+    responses={
+        400: {"description": "The credential is missing, expired, or not from Google"},
+        409: {"description": "That email already belongs to an account"},
+        503: {"description": "Google sign-in is not configured, or Google is unreachable"},
+    },
+)
+async def login_with_google(
+    body: GoogleSignInRequest,
+    db: Annotated[AsyncSession, Depends(get_db)],
+    settings: Annotated[Settings, Depends(get_settings)],
+    google: Annotated[GoogleAuthService, Depends(get_google_auth_service)],
+    uploads: Annotated[CloudinaryService, Depends(get_cloudinary_service)],
+    delivery: Annotated[OtpDeliveryService, Depends(get_otp_delivery_service)],
+    otp: Annotated[OtpService, Depends(get_otp_service)],
+    audit: Annotated[OtpAudit, Depends(get_otp_audit)],
+    client_ip: Annotated[str | None, Depends(client_address)],
+) -> LoginResponse | OtpRequiredResponse:
+    result = await get_auth_service(settings).login_google(
+        db,
+        credential=body.credential,
+        google=google,
+        uploads=uploads,
         delivery=delivery,
         otp=otp,
         audit=audit,

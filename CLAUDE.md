@@ -48,6 +48,12 @@ frontend/ React 19 SPA: feature folders, TanStack Query for server state, SSE vi
 
 ### Backend essentials
 
+- **Sign in with Google** (`app/services/google_auth_service.py`, `POST /auth/google`):
+  the frontend renders Google's own Identity Services button
+  (`features/auth/GoogleSignInButton`, loaded on demand and absent when
+  `VITE_GOOGLE_CLIENT_ID` is unset) and posts the credential it returns; the backend
+  verifies it against Google's published keys and answers with the same payload
+  `/auth/login` does. No client secret exists — the ID-token flow exchanges nothing.
 - **AI streaming flow** (`app/services/ai_service.py`): `POST /conversations/{id}/messages`
   persists the user message pre-flight, streams SSE (`message.created` →
   `message.delta`* → `message.completed`), then persists the assistant message.

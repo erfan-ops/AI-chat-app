@@ -19,7 +19,11 @@ the API. Nothing is hardcoded or mocked.
 
 - **Accounts** — registration and login with Argon2id password hashing and signed
   JWT access tokens; failed-login throttling (5 attempts → 60 s lockout); change your
-  password from settings by confirming the current one.
+  password from settings by confirming the current one. **Sign in with Google** through
+  Google Identity Services creates the account on first use — initialised from the
+  verified Google claims, including a copy of the profile picture in Cloudinary — and
+  signs you in on every later visit without ever overwriting what you have changed
+  since.
 - **Settings & two-step verification** — change your profile picture (pick an image,
   crop it 1:1, uploaded straight to Cloudinary), your username (unique across
   accounts, and checked on the server), display name and default model, and protect

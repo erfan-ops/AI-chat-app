@@ -278,3 +278,59 @@
   line-height: 1.5;
   color: var(--danger);
 }
+
+/* ---- Continue with Google ---- */
+
+/* A hairline rule with the word centred on it, separating the password form from the
+   provider button without claiming they are equal choices. */
+.divider {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin: 18px 0 14px;
+  color: var(--text-3);
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
+.divider::before,
+.divider::after {
+  content: '';
+  flex: 1;
+  height: 1px;
+  background: var(--border);
+}
+
+/* GIS renders its own button into here. The host is sized to match the form's
+   controls (the button itself is rendered at 320px by GIS) and centred. */
+.googleRow {
+  position: relative;
+  display: flex;
+  justify-content: center;
+  min-height: 44px;
+}
+
+.googleButton {
+  display: flex;
+  justify-content: center;
+  width: 100%;
+}
+
+/* Covers the Google button while the form is submitting, so a second sign-in cannot
+   race the first. Transparent: the button underneath still reads as a button. */
+.googleDisabled {
+  position: absolute;
+  inset: 0;
+}
+
+.googleFallback {
+  width: 100%;
+  padding: 11px 14px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--bg-panel);
+  color: var(--text-2);
+  font-size: 13.5px;
+  text-align: center;
+}

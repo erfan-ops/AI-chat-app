@@ -25,6 +25,8 @@ from app.exceptions import (
     ServiceUnavailableError,
     UnauthorizedError,
 )
+from app.services.cloudinary_service import CloudinaryService
+from app.services.google_auth_service import GoogleAuthService
 from app.services.otp_audit import OtpAudit
 from app.services.otp_delivery import OtpDeliveryService
 from app.services.otp_service import OtpService
@@ -167,9 +169,17 @@ class AuthService:
         if self._attempts.is_locked(username):
             raise RateLimitError("Too many failed login attempts; try again later")
         user = await UserRepository(db).get_by_username(username)
-        password_ok = self._passwords.verify(
-            user.password_hash if user else self._dummy_hash, password
-        )
+        if user is None or user.password_hash is None:
+            # Unknown username, or an account created through Google that has never
+            # set a password. There is nothing to compare against, so the password is
+            # checked against the dummy hash purely to spend the same time as a real
+            # verification, and the answer is discarded: the dummy's plaintext is a
+            # literal in this file, so it must never be the value an account is
+            # *actually* judged by.
+            self._passwords.verify(self._dummy_hash, password)
+            password_ok = False
+        else:
+            password_ok = self._passwords.verify(user.password_hash, password)
         if user is None or not password_ok:
             self._attempts.record_failure(username)
             structured(logger, logging.WARNING, "login failed", username=username)
@@ -184,11 +194,7 @@ class AuthService:
             return await self._start_otp_login(
                 user, delivery=delivery, otp=otp, audit=audit, client_ip=client_ip
             )
-        user.last_login_at = utcnow()
-        await db.commit()
-        token, expires_in = self._tokens.create_access_token(user.id)
-        structured(logger, logging.INFO, "login succeeded", user_id=user.id)
-        return LoginResult(user=user, access_token=token, expires_in_minutes=expires_in)
+        return await self._issue_session(db, user)
 
     async def change_password(
         self,
@@ -204,13 +210,20 @@ class AuthService:
         token would be an unlimited oracle for guessing the password it exists to
         protect. Failures are 400, never 401 — this client signs out on any
         authenticated 401, so a mistyped password would eject the user.
+
+        An account created through Google has no password to give: for it this is a
+        *first* password rather than a change, and the current one is not asked for.
+        The caller is authenticated either way, and without this such an account could
+        never gain a password at all.
         """
         user = await UserRepository(db).get_by_id(user_id)
         if user is None:
             raise NotFoundError("User not found")
         if self._attempts.is_locked(user.username):
             raise RateLimitError("Too many failed attempts; try again later")
-        if not self._passwords.verify(user.password_hash, current_password):
+        if user.password_hash is not None and not self._passwords.verify(
+            user.password_hash, current_password
+        ):
             self._attempts.record_failure(user.username)
             structured(logger, logging.WARNING, "password change rejected", user_id=user.id)
             raise BadRequestError("That password is incorrect")
@@ -222,6 +235,57 @@ class AuthService:
         await db.refresh(user)
         structured(logger, logging.INFO, "password changed", user_id=user.id)
         return user
+
+    async def _issue_session(self, db: AsyncSession, user: User) -> LoginResult:
+        """Record the sign-in and mint the access token.
+
+        The single place a session is created, so every way in — password, second
+        step, Google — produces the same token, the same `last_login_at` and the same
+        log line.
+        """
+        user.last_login_at = utcnow()
+        await db.commit()
+        token, expires_in = self._tokens.create_access_token(user.id)
+        structured(logger, logging.INFO, "login succeeded", user_id=user.id)
+        return LoginResult(user=user, access_token=token, expires_in_minutes=expires_in)
+
+    async def login_google(
+        self,
+        db: AsyncSession,
+        *,
+        credential: str,
+        google: GoogleAuthService,
+        uploads: CloudinaryService,
+        delivery: OtpDeliveryService,
+        otp: OtpService,
+        audit: OtpAudit,
+        client_ip: str | None = None,
+    ) -> LoginResult | OtpChallengeResult:
+        """Sign in with a Google credential, creating the account on first use.
+
+        Two-step verification still applies: Google proves which Google account this
+        is, but the second factor is this application's own control, and skipping it
+        for one way in would make it skip-able. So an account with 2FA on gets the
+        same code challenge as a password login.
+        """
+        user, created = await google.identify(db, credential=credential, uploads=uploads)
+        if user.status != ACTIVE_STATUS:
+            structured(
+                logger, logging.WARNING, "google login rejected: account disabled", user_id=user.id
+            )
+            raise ForbiddenError("Account is disabled")
+        if user.otp_enabled == 1:
+            return await self._start_otp_login(
+                user, delivery=delivery, otp=otp, audit=audit, client_ip=client_ip
+            )
+        result = await self._issue_session(db, user)
+        if not created:
+            # A returning user is only ever touched in the ways a password login
+            # touches them: `last_login_at` and nothing else. Display name, avatar and
+            # every other profile field are the user's own to change (see
+            # docs/google-signin-notes.md).
+            structured(logger, logging.INFO, "google login", user_id=user.id)
+        return result
 
     async def complete_otp_login(
         self,
@@ -253,13 +317,11 @@ class AuthService:
         if user.otp_enabled != 1:
             # Two-step verification was turned off between the two steps.
             raise BadRequestError("Two-step verification is no longer enabled")
-        user.last_login_at = utcnow()
-        await db.commit()
-        token, expires_in = self._tokens.create_access_token(user.id)
+        result = await self._issue_session(db, user)
         structured(logger, logging.INFO, "login succeeded", user_id=user.id, second_factor=True)
         # After the commit: the login is what matters, the history records it.
         await audit.consumed(user_id=user.id, purpose="login")
-        return LoginResult(user=user, access_token=token, expires_in_minutes=expires_in)
+        return result
 
     async def _start_otp_login(
         self,

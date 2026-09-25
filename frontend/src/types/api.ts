@@ -45,6 +45,12 @@ export interface LoginRequest {
   password: string
 }
 
+/** Body for POST /auth/google — the ID token Google Identity Services returned to the
+ *  browser. Opaque to this app: the backend verifies it with Google before use. */
+export interface GoogleSignInRequest {
+  credential: string
+}
+
 /** Successful login: a bearer access token plus the user profile. */
 export interface LoginResponse {
   access_token: string

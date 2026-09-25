@@ -20,6 +20,7 @@ from app.services.ai_service import AIService, ProviderFactory
 from app.services.auth_service import AuthService
 from app.services.cloudinary_service import CloudinaryService
 from app.services.email_service import EmailService
+from app.services.google_auth_service import GoogleAuthService
 from app.services.otp_audit import OtpAudit
 from app.services.otp_delivery import OtpDeliveryService
 from app.services.otp_service import OtpService
@@ -30,25 +31,41 @@ from app.services.totp_service import TotpService
 bearer_scheme = HTTPBearer(auto_error=False, description="JWT access token from POST /auth/login")
 
 
+# Every factory below takes its settings through ``Depends``, even the ones that are
+# also called directly with ``get_settings()``. Without the annotation FastAPI treats a
+# Pydantic-model parameter as a request *body* field whenever the function is reached
+# as a dependency — which silently turns the endpoint that uses it into an embedded
+# body ({"body": ..., "settings": {...}}) instead of the contract it declares.
 @lru_cache
-def get_token_manager(settings: Settings) -> TokenManager:
+def get_token_manager(settings: Annotated[Settings, Depends(get_settings)]) -> TokenManager:
     return TokenManager(
         settings.jwt_secret, settings.jwt_algorithm, settings.access_token_expire_minutes
     )
 
 
 @lru_cache
-def get_auth_service(settings: Settings) -> AuthService:
+def get_auth_service(settings: Annotated[Settings, Depends(get_settings)]) -> AuthService:
     return AuthService(settings)
 
 
 @lru_cache
-def get_ai_service(settings: Settings) -> AIService:
+def get_google_auth_service(
+    settings: Annotated[Settings, Depends(get_settings)],
+) -> GoogleAuthService:
+    """Verifies Google credentials. Overridable in tests, so none of them reaches
+    Google's key set — or needs a real credential."""
+    return GoogleAuthService(settings)
+
+
+@lru_cache
+def get_ai_service(settings: Annotated[Settings, Depends(get_settings)]) -> AIService:
     return AIService(settings)
 
 
 @lru_cache
-def get_cloudinary_service(settings: Settings) -> CloudinaryService:
+def get_cloudinary_service(
+    settings: Annotated[Settings, Depends(get_settings)],
+) -> CloudinaryService:
     return CloudinaryService(settings)
 
 
