@@ -124,6 +124,7 @@ export function CharacterFormModal({ open, onClose, onCreated }: CharacterFormMo
             onCroppingChange={setCroppingState}
             disabled={busy}
             name={trimmedName || 'Character'}
+            kind="character"
           />
         </div>
 

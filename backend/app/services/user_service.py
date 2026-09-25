@@ -31,6 +31,8 @@ class UserService:
         display_name: str | None,
         default_model_id: int | None,
         preferred_otp_method: OtpMethod | None = None,
+        avatar_url: str | None = None,
+        provided: frozenset[str] = frozenset(),
     ) -> User:
         repo = UserRepository(db)
         user = await repo.get_by_id(user_id)
@@ -58,6 +60,10 @@ class UserService:
             user.default_model_id = default_model_id
         if display_name is not None:
             user.display_name = display_name
+        # Keyed on what the client sent rather than on the value: `null` here means
+        # "remove the picture", so an absent field is the only way to leave it alone.
+        if "avatar_url" in provided:
+            user.avatar_url = avatar_url
         user.updated_at = utcnow()
         try:
             await db.commit()

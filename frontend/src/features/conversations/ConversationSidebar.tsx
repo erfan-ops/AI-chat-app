@@ -128,7 +128,11 @@ export function ConversationSidebar({
       </div>
 
       <footer className={styles.footer}>
-        <Avatar name={user?.display_name ?? user?.username ?? '?'} size={32} />
+        <Avatar
+          name={user?.display_name ?? user?.username ?? '?'}
+          src={user?.avatar_url}
+          size={32}
+        />
         <div className={styles.userInfo}>
           <p className={styles.userName}>{user?.display_name ?? user?.username}</p>
           {user?.display_name && <p className={styles.userHandle}>@{user.username}</p>}

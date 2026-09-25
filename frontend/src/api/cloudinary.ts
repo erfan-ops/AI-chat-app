@@ -7,11 +7,16 @@
  */
 
 import { apiRequest } from './client'
-import type { UploadSignature } from '../types/api'
+import type { UploadKind, UploadSignature } from '../types/api'
 
-/** Ask the API to sign an avatar upload (503 when Cloudinary is not configured). */
-export function requestUploadSignature(): Promise<UploadSignature> {
-  return apiRequest<UploadSignature>('/cloudinary/signature', { method: 'POST' })
+/** Ask the API to sign an avatar upload for `kind` — a character's avatar or the
+ *  caller's own picture; the folder that gets signed is chosen server-side.
+ *  Answers 503 when Cloudinary is not configured. */
+export function requestUploadSignature(kind: UploadKind): Promise<UploadSignature> {
+  return apiRequest<UploadSignature>('/cloudinary/signature', {
+    method: 'POST',
+    body: { kind },
+  })
 }
 
 /** Cloudinary reports upload failures as `{"error": {"message": "..."}}`. */

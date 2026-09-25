@@ -23,6 +23,7 @@ CLOUD_NAME = "demo-cloud"
 API_KEY = "123456789012345"
 API_SECRET = "test-cloudinary-secret"
 FOLDER = "characters"
+USER_FOLDER = "users"
 
 # Same JWT secret/database URL as the shared test settings: get_token_manager is
 # lru_cached on the settings object, so a different secret would invalidate every
@@ -108,4 +109,35 @@ async def test_signature_matches_documented_algorithm(
     to_sign = f"folder={FOLDER}&timestamp={body['timestamp']}{API_SECRET}"
     assert body["signature"] == hashlib.sha1(to_sign.encode()).hexdigest()
 
+    assert API_SECRET not in response.text
+
+
+async def test_a_user_picture_is_signed_into_its_own_folder(
+    client: AsyncClient, configured_cloudinary: None
+) -> None:
+    """The same upload flow, a different destination: the client names a kind, and the
+    folder that gets signed is chosen here."""
+    headers, _user = await auth_user(client, "alice")
+
+    response = await client.post("/cloudinary/signature", json={"kind": "user"}, headers=headers)
+
+    assert response.status_code == 200, response.text
+    body = response.json()
+    assert body["folder"] == USER_FOLDER
+    to_sign = f"folder={USER_FOLDER}&timestamp={body['timestamp']}{API_SECRET}"
+    assert body["signature"] == hashlib.sha1(to_sign.encode()).hexdigest()
+
+
+async def test_an_unknown_upload_kind_is_not_signed(
+    client: AsyncClient, configured_cloudinary: None
+) -> None:
+    """Only the kinds this application knows are writable, so a client cannot ask for
+    an arbitrary folder."""
+    headers, _user = await auth_user(client, "alice")
+
+    response = await client.post(
+        "/cloudinary/signature", json={"kind": "../../private"}, headers=headers
+    )
+
+    assert response.status_code == 422
     assert API_SECRET not in response.text

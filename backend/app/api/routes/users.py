@@ -33,8 +33,11 @@ async def get_me(
     response_model=UserRead,
     summary="Update the authenticated user's profile",
     description=(
-        "Update the username, display name and/or the default AI model. "
-        "The username must be unique — a duplicate is 409."
+        "Update the username, display name, default AI model and/or profile picture. "
+        "The username must be unique — a duplicate is 409. `avatar_url` is the "
+        "Cloudinary URL the browser uploaded (see `POST /cloudinary/signature`); an "
+        "explicit `null` removes the picture, so omitting the field is how a client "
+        "leaves it unchanged."
     ),
     responses={409: {"description": "Username is already taken"}},
 )
@@ -50,6 +53,8 @@ async def update_me(
         display_name=body.display_name,
         default_model_id=body.default_model_id,
         preferred_otp_method=body.preferred_otp_method,
+        avatar_url=body.avatar_url,
+        provided=body.provided,
     )
 
 

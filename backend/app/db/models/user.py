@@ -39,6 +39,10 @@ class User(Base):
     # app/core/email.py. Only ever written after a code sent to it came back.
     # Unique (UK_USERS_EMAIL) for the same reason as the mobile number.
     email: Mapped[str | None] = mapped_column(String(200), unique=True)
+    # Profile picture: the Cloudinary secure_url of the 512x512 master the browser
+    # uploaded (see app/services/cloudinary_service.py — the image never passes
+    # through the API). Display sizes are derived from it at delivery time.
+    avatar_url: Mapped[str | None] = mapped_column(String(1000))
     # Authenticator (TOTP) shared secret, Base32, 32 characters — CHAR(32) in Oracle,
     # which blank-pads, so it is stripped when read. Generated on enrolment and only
     # trusted once a code from it has been verified; never returned by the API.

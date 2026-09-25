@@ -89,7 +89,7 @@ src/
     characters/            # cached character lookup (avatars), create + profile dialogs,
                            #   avatar picker (crop → upload to Cloudinary)
     models/                # shared ['models'] query (picker + settings)
-    settings/SettingsModal # profile (username, display name, default model), theme,
+    settings/SettingsModal # profile (picture, username, display name, default model), theme,
                            #   two-step verification (SMS, email or an authenticator app —
                            #   QR enrolment, default method, verified methods)
     personas/              # user personas: cached list + create-persona form modal
@@ -208,6 +208,13 @@ its family at the front of the `body` stack.
   auto-quality image. Uploads are optional — a character without one shows the
   initial. Requires the backend's `CLOUDINARY_*` settings; unconfigured, the picker
   reports the API's "Cloudinary is not configured" error.
+- **The same picker sets your own profile picture** (`USERS.AVATAR_URL`), from the
+  settings dialog's Profile section. It is the character flow unchanged — one shared
+  `AvatarPicker`, which now takes a `kind` (`character` | `user`) that the signature
+  request carries, so an upload lands in the folder for what it is. Two differences:
+  the settings one saves as soon as the upload finishes (uploading *is* the action, so
+  `PATCH /me {avatar_url}` fires from the picker's `onChange`; `null` removes it), and
+  the sidebar footer's avatar shows the picture, falling back to the initial.
 - The conversation list only exposes a `{id, name}` character brief and no last-message
   preview, so sidebar items show: character avatar, title (or character name), model
   name, persona (as "as …" when one was picked), and relative time of the last activity.

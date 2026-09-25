@@ -4,6 +4,7 @@ import Cropper from 'react-easy-crop'
 import type { Area } from 'react-easy-crop'
 import { requestUploadSignature, uploadToCloudinary } from '../../api/cloudinary'
 import { getCroppedBlob, AVATAR_SIZE } from '../../utils/cropImage'
+import type { UploadKind } from '../../types/api'
 import { errorMessage } from '../../utils/errors'
 import { pushToast } from '../../components/toastStore'
 import { Spinner } from '../../components/Spinner'
@@ -33,6 +34,10 @@ export interface AvatarPickerProps {
   /** Mirrors the form's busy state (e.g. the character is being created). */
   disabled?: boolean
   name: string
+  /** What the upload is for: a character's avatar or the signed-in user's picture.
+   *  The API maps it to a Cloudinary folder, so the file does not land in the
+   *  characters' folder when it is somebody's profile picture. */
+  kind: UploadKind
 }
 
 /**
@@ -47,6 +52,7 @@ export function AvatarPicker({
   onCroppingChange,
   disabled = false,
   name,
+  kind,
 }: AvatarPickerProps) {
   const inputRef = useRef<HTMLInputElement>(null)
   const [stage, setStage] = useState<PickerStage>(value ? 'uploaded' : 'idle')
@@ -125,7 +131,7 @@ export function AvatarPicker({
     abortRef.current = controller
     try {
       const blob = await getCroppedBlob(imageUrl, croppedArea)
-      const signature = await requestUploadSignature()
+      const signature = await requestUploadSignature(kind)
       const secureUrl = await uploadToCloudinary(blob, signature, controller.signal)
 
       if (imageUrl) URL.revokeObjectURL(imageUrl)

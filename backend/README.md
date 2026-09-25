@@ -152,7 +152,7 @@ Copy `.env.example` to `.env` and fill in real values (never commit `.env`):
 | `AI_DEFAULT_CONTEXT_CHARS` | `16000` | Default token budget ≈ chars/4 |
 | `AI_TEMPERATURE` / `AI_MAX_TOKENS` | `0.8` / `1024` | Generation parameters |
 | `AI_STREAM_TIMEOUT_SECONDS` | `120` | Provider read timeout |
-| `CLOUDINARY_CLOUD_NAME` / `CLOUDINARY_API_KEY` / `CLOUDINARY_API_SECRET` | *(empty)* | Cloudinary credentials for signed avatar uploads. The secret stays server-side; unset disables the feature (`POST /cloudinary/signature` → 503) |
+| `CLOUDINARY_CLOUD_NAME` / `CLOUDINARY_API_KEY` / `CLOUDINARY_API_SECRET` | *(empty)* | Cloudinary credentials for signed avatar uploads (characters and user profile pictures). The secret stays server-side; unset disables the feature (`POST /cloudinary/signature` → 503) |
 | `SMS_IR_API_KEY` | *(empty)* | SMS.ir API key for two-step codes. Unset disables the SMS channel (`503 SMS is not configured`) |
 | `SMS_IR_TEMPLATE_ID` | `601570` | SMS.ir "send verify code" template; its parameters are `USERNAME` and `CODE` |
 | `SMS_IR_BASE_URL` / `SMS_IR_TIMEOUT_SECONDS` | `https://api.sms.ir` / `10` | Provider endpoint (overridable for a local stub) and request timeout |
@@ -224,6 +224,25 @@ uv run ty check app
   from the access token, never from the request body.
 - **Administrators** (`USERS.ROLE = 'ROLE_admin'`, set only in the database) get full CRUD
   over characters and models through the same paths — see *Roles* below.
+
+### Profile pictures
+
+`USERS.AVATAR_URL` holds the Cloudinary `secure_url` the browser uploaded — the same
+flow characters use, with the API contributing only a signature:
+
+1. `POST /cloudinary/signature` with `{"kind": "user"}` (or `{"kind": "character"}`,
+   the default) returns the signature, timestamp, API key, cloud name and the
+   **folder** the upload must target. The client names a kind, never a path: the
+   folder is chosen server-side (`characters` / `users`), so no client-supplied value
+   is ever signed. Unconfigured Cloudinary answers `503`.
+2. The browser crops the picked image to 1:1, renders a 512x512 WebP and posts it
+   straight to Cloudinary with those parameters. The image never passes through this
+   API, and the API secret never leaves the server.
+3. The returned `secure_url` is sent to `PATCH /me {avatar_url}`. An explicit `null`
+   removes the picture; **omitting** the field leaves it unchanged (so saving the rest
+   of the profile cannot wipe it).
+
+Display sizes are Cloudinary transformations applied on delivery, not stored variants.
 
 ### Two-step verification (one-time codes)
 
@@ -303,7 +322,7 @@ code leaves the device.
 | `POST /auth/login` | Get JWT access token (public); with two-step on, returns `otp_required` + a `challenge_id` instead |
 | `POST /auth/login/otp` | Complete a two-step login with the code (public) |
 | `POST /auth/login/otp/method` | Send this login's code through the other channel instead (public) |
-| `GET /me` · `PATCH /me` | Profile; update username / display name / default model / `preferred_otp_method` (a taken username is `409`) |
+| `GET /me` · `PATCH /me` | Profile; update username / display name / default model / `preferred_otp_method` / `avatar_url` (a taken username is `409`; an explicit `null` avatar removes the picture) |
 | `POST /me/password` | Change the password — needs the current one (`400` if wrong, never `401`) |
 | `POST /me/otp/enable` · `/me/otp/verify` | Verify a mobile number, an email address or an enrolled authenticator, then turn two-step on |
 | `POST /me/totp/enable` | Generate and store an authenticator secret; returns the `otpauth://` URI and key **once** (enables nothing) |

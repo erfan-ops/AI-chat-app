@@ -7,7 +7,21 @@ is never part of any response.
 
 from __future__ import annotations
 
+from typing import Literal
+
 from pydantic import BaseModel, ConfigDict, Field
+
+# What the upload is for. The *kind* is named by the client; the folder it maps to is
+# decided server-side (app/services/cloudinary_service.py), so a request can never
+# choose where it writes.
+UploadKind = Literal["character", "user"]
+
+
+class UploadSignatureRequest(BaseModel):
+    """Body for POST /cloudinary/signature. Optional: the default is a character
+    avatar, which is what this endpoint signed before user pictures existed."""
+
+    kind: UploadKind = "character"
 
 
 class UploadSignatureRead(BaseModel):

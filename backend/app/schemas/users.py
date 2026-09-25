@@ -39,6 +39,9 @@ class UserRead(BaseModel):
     # Whether an authenticator app is enrolled — the answer, never the secret. A
     # client needs it to offer the method; nothing here can produce a code.
     authenticator_enrolled: bool = False
+    # Profile picture: the Cloudinary URL the client uploaded. Resized at delivery
+    # (`utils/cloudinary.ts`), so this is the master, not a per-size variant.
+    avatar_url: str | None = None
 
     @field_validator("mobile_number", mode="before")
     @classmethod
@@ -80,17 +83,21 @@ class UserUpdate(BaseModel):
     # rejects the rest, so a login code can never point at a contact that does not
     # exist.
     preferred_otp_method: OtpMethod | None = None
+    # The uploaded Cloudinary URL. An explicit `null` removes the picture, which is why
+    # the *only* way to leave it alone is to omit the field — this column, unlike
+    # `default_model_id`, is meant to be clearable.
+    avatar_url: str | None = Field(default=None, max_length=1000)
+
+    @property
+    def provided(self) -> frozenset[str]:
+        """The fields the client actually sent (an explicit ``null`` clears one)."""
+        return frozenset(self.model_fields_set)
 
     @model_validator(mode="after")
     def _at_least_one_field(self) -> UserUpdate:
-        if (
-            self.username is None
-            and self.display_name is None
-            and self.default_model_id is None
-            and self.preferred_otp_method is None
-        ):
+        if not self.model_fields_set:
             raise ValueError(
                 "Provide at least one of: username, display_name, default_model_id, "
-                "preferred_otp_method"
+                "preferred_otp_method, avatar_url"
             )
         return self

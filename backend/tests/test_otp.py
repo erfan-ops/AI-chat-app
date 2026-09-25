@@ -28,6 +28,8 @@ from tests.conftest import (
 )
 
 MOBILE = "9123456789"
+# What Cloudinary returns from an upload; only its shape matters here.
+UPLOADED_URL = "https://res.cloudinary.com/demo-cloud/image/upload/v1712345678/users/abc123.webp"
 
 
 async def _headers(client: AsyncClient, username: str = "alice") -> tuple[dict[str, str], dict]:
@@ -69,6 +71,70 @@ async def test_update_display_name(client: AsyncClient) -> None:
 
     assert response.status_code == 200
     assert response.json()["display_name"] == "Alice A"
+
+
+async def test_a_new_account_has_no_profile_picture(client: AsyncClient) -> None:
+    headers, user = await _headers(client)
+
+    assert user["avatar_url"] is None
+    assert (await client.get("/me", headers=headers)).json()["avatar_url"] is None
+
+
+async def test_update_profile_picture(client: AsyncClient) -> None:
+    """The URL the browser got back from Cloudinary is stored as-is."""
+    headers, _user = await _headers(client)
+
+    response = await client.patch("/me", json={"avatar_url": UPLOADED_URL}, headers=headers)
+
+    assert response.status_code == 200, response.text
+    assert response.json()["avatar_url"] == UPLOADED_URL
+    # And it comes back on the profile the rest of the app reads.
+    assert (await client.get("/me", headers=headers)).json()["avatar_url"] == UPLOADED_URL
+
+
+async def test_update_without_the_avatar_leaves_it_alone(client: AsyncClient) -> None:
+    """Omitting the field is how a client says "leave it": the form saves the display
+    name on the same request that would otherwise wipe the picture."""
+    headers, _user = await _headers(client)
+    await client.patch("/me", json={"avatar_url": UPLOADED_URL}, headers=headers)
+
+    response = await client.patch("/me", json={"display_name": "Alice A"}, headers=headers)
+
+    assert response.json()["avatar_url"] == UPLOADED_URL
+
+
+async def test_an_explicit_null_removes_the_profile_picture(client: AsyncClient) -> None:
+    """`avatar_url` is clearable, which `default_model_id` deliberately is not."""
+    headers, _user = await _headers(client)
+    await client.patch("/me", json={"avatar_url": UPLOADED_URL}, headers=headers)
+
+    response = await client.patch("/me", json={"avatar_url": None}, headers=headers)
+
+    assert response.status_code == 200, response.text
+    assert response.json()["avatar_url"] is None
+    assert (await client.get("/me", headers=headers)).json()["avatar_url"] is None
+
+
+async def test_a_profile_picture_longer_than_the_column_is_rejected(client: AsyncClient) -> None:
+    """AVATAR_URL is VARCHAR2(1000) — the schema refuses what the column cannot hold."""
+    headers, _user = await _headers(client)
+
+    response = await client.patch(
+        "/me", json={"avatar_url": "https://res.cloudinary.com/" + "x" * 1000}, headers=headers
+    )
+
+    assert response.status_code == 422
+
+
+async def test_updating_the_picture_alone_is_a_valid_request(client: AsyncClient) -> None:
+    """At least one field is required; the picture counts as one."""
+    headers, _user = await _headers(client)
+
+    response = await client.patch("/me", json={"avatar_url": UPLOADED_URL}, headers=headers)
+    assert response.status_code == 200
+
+    empty = await client.patch("/me", json={}, headers=headers)
+    assert empty.status_code == 422
 
 
 async def test_update_username(client: AsyncClient) -> None:

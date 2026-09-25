@@ -29,6 +29,9 @@ export interface User {
   /** Whether an authenticator app is enrolled, so the method can be offered.
    *  The answer only — the server never sends the secret itself. */
   authenticator_enrolled: boolean
+  /** Profile picture: the Cloudinary master the client uploaded, resized at
+   *  delivery (see utils/cloudinary.ts). Null when none has been set. */
+  avatar_url: string | null
 }
 
 export interface RegisterRequest {
@@ -127,6 +130,9 @@ export interface UserUpdate {
   display_name?: string | null
   default_model_id?: number | null
   preferred_otp_method?: OtpMethod
+  /** The uploaded Cloudinary URL, or null to remove the picture. Omitting the field
+   *  leaves it alone — which is why the form only sends it when it changed. */
+  avatar_url?: string | null
 }
 
 /** An AI character you chat with (mirrors CharacterRead). `system_prompt` is
@@ -142,6 +148,16 @@ export interface Character {
   status: string
   created_at: string
   owner_user_id: number | null
+}
+
+/** What an upload is for. The server maps it to a Cloudinary folder, so the client
+ *  names a kind rather than a path. */
+export type UploadKind = 'character' | 'user'
+
+/** Body for POST /cloudinary/signature — optional, and a character avatar by
+ *  default, which is what this endpoint signed before profile pictures existed. */
+export interface UploadSignatureRequest {
+  kind: UploadKind
 }
 
 /** Response for POST /cloudinary/signature — everything the browser needs to

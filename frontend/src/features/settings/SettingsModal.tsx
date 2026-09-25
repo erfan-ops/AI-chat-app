@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import type { FormEvent } from 'react'
 import { useMutation } from '@tanstack/react-query'
 import QRCode from 'react-qr-code'
@@ -14,6 +14,7 @@ import { useSession, updateSessionUser } from '../../session/authSession'
 import { THEMES, resolveTheme, setTheme, useTheme } from '../../theme/themeStore'
 import type { Theme } from '../../theme/themeStore'
 import { useModels } from '../models/useModels'
+import { AvatarPicker } from '../characters/AvatarPicker'
 import { Modal } from '../../components/Modal'
 import { Spinner } from '../../components/Spinner'
 import { pushToast } from '../../components/toastStore'
@@ -93,6 +94,11 @@ export function SettingsModal({ open, onClose }: SettingsModalProps) {
   const [pending, setPending] = useState<Pending | null>(null)
   const [code, setCode] = useState('')
   const [secondsLeft, setSecondsLeft] = useState(0)
+  const [avatarUrl, setAvatarUrl] = useState<string | null>(user?.avatar_url ?? null)
+  const [avatarUploading, setAvatarUploading] = useState(false)
+  // While the crop or the upload is in progress, closing the dialog would throw the
+  // selection away without saying so — Escape and overlay clicks do nothing instead.
+  const guardCloseRef = useRef(false)
 
   const trimmedUsername = username.trim()
   const usernameValid = USERNAME_PATTERN.test(trimmedUsername)
@@ -110,6 +116,18 @@ export function SettingsModal({ open, onClose }: SettingsModalProps) {
     onSuccess: (updated: User) => {
       updateSessionUser(updated)
       pushToast('success', 'Settings saved')
+    },
+    onError: (error) => pushToast('error', errorMessage(error)),
+  })
+
+  /** Saving the picture is its own action — the upload already happened, so it is
+   *  written the moment Cloudinary returns a URL (or cleared when it is removed). */
+  const saveAvatar = useMutation({
+    mutationFn: (next: string | null) => updateMe({ avatar_url: next }),
+    onSuccess: (updated: User, next) => {
+      updateSessionUser(updated)
+      setAvatarUrl(updated.avatar_url)
+      pushToast('success', next ? 'Profile picture updated' : 'Profile picture removed')
     },
     onError: (error) => pushToast('error', errorMessage(error)),
   })
@@ -213,7 +231,10 @@ export function SettingsModal({ open, onClose }: SettingsModalProps) {
 
   // Stable identity: Modal re-runs its effect (re-focusing the panel) whenever
   // onClose changes, which would break typing in the fields below.
-  const handleClose = useCallback(() => onClose(), [onClose])
+  const handleClose = useCallback(() => {
+    if (guardCloseRef.current) return
+    onClose()
+  }, [onClose])
 
   function saveProfileSettings(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
@@ -257,6 +278,7 @@ export function SettingsModal({ open, onClose }: SettingsModalProps) {
 
   const anyPending =
     saveProfile.isPending ||
+    avatarUploading ||
     sendCode.isPending ||
     startAuthenticator.isPending ||
     confirmCode.isPending
@@ -315,6 +337,24 @@ export function SettingsModal({ open, onClose }: SettingsModalProps) {
     <Modal open={open} onClose={handleClose} title="Settings" size="md">
       <form onSubmit={saveProfileSettings} noValidate>
         <h3 className={styles.sectionTitle}>Profile</h3>
+
+        <div className={styles.field}>
+          <span className={styles.label}>Profile picture</span>
+          {/* The same picker the character form uses: choose a file, crop it 1:1,
+              upload straight to Cloudinary. Saving happens on upload, so there is
+              nothing for "Save profile" to add — hence the separate mutation. */}
+          <AvatarPicker
+            value={avatarUrl}
+            onChange={(next) => saveAvatar.mutate(next)}
+            onUploadingChange={setAvatarUploading}
+            onCroppingChange={(cropping) => {
+              guardCloseRef.current = cropping
+            }}
+            disabled={saveAvatar.isPending}
+            name={user?.display_name ?? user?.username ?? 'You'}
+            kind="user"
+          />
+        </div>
 
         <div className={styles.field}>
           <label htmlFor="settings-username" className={styles.label}>
@@ -383,7 +423,7 @@ export function SettingsModal({ open, onClose }: SettingsModalProps) {
           <button
             type="submit"
             className={styles.submit}
-            disabled={saveProfile.isPending || !usernameValid}
+            disabled={saveProfile.isPending || avatarUploading || !usernameValid}
           >
             {saveProfile.isPending ? (
               <>
