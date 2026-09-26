@@ -138,9 +138,14 @@ its family at the front of the `body` stack.
   Google's button, and posts the credential it returns to `/auth/google`. That credential
   is never decoded here, and the reply is the same `LoginResponse | OtpRequiredResponse`
   the password form already handles, so a Google sign-in lands in the same session state
-  (and the same code prompt, for an account with two-step verification on). The button is
-  re-rendered when the theme changes (`filled_black` in dark, `outline` in light), since
-  Google bakes the colours into the element it builds.
+  (and the same code prompt, for an account with two-step verification on).
+  Google draws the button itself — its markup is required for this flow — so the styling
+  is the set of options the library actually offers: `outline` on the light card and
+  `outline_dark` on the dark one (within a shade of `--bg-panel`), `pill` to match the
+  app's other rounded controls, a width measured from the row so it lines up with the
+  fields above it, and `hl=en` on the script so the label is in the same language as the
+  rest of the UI rather than the browser's. It is redrawn on theme change and on resize,
+  since Google bakes the colours and the width into what it builds.
 - **Settings**: the sidebar footer opens a settings dialog — username, display name and
   default model (`PATCH /me`), password (`POST /me/password`, with the new password typed
   twice and matched in the form before it is sent), theme, and two-step verification

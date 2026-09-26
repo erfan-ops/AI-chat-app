@@ -22,5 +22,6 @@ export default defineConfig({
   },
   preview: {
     proxy: apiProxy,
+    allowedHosts: ['localhost', '192.168.1.69', 'ai.erfancodes.ir']
   },
 })

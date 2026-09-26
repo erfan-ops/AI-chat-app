@@ -281,17 +281,17 @@
 
 /* ---- Continue with Google ---- */
 
-/* A hairline rule with the word centred on it, separating the password form from the
-   provider button without claiming they are equal choices. */
+/* A hairline rule with a lowercase word on it: a quieter break than a heading, which
+   would read as a second, equal way in rather than an alternative. */
 .divider {
   display: flex;
   align-items: center;
   gap: 12px;
-  margin: 18px 0 14px;
+  margin: 20px 0 14px;
   color: var(--text-3);
   font-size: 12px;
-  text-transform: uppercase;
-  letter-spacing: 0.08em;
+  letter-spacing: 0.02em;
+  user-select: none;
 }
 
 .divider::before,
@@ -302,13 +302,14 @@
   background: var(--border);
 }
 
-/* GIS renders its own button into here. The host is sized to match the form's
-   controls (the button itself is rendered at 320px by GIS) and centred. */
+/* Google draws its own button inside this row (the library requires its own markup),
+   so the job here is to place it: as wide as the fields above, centred, with the same
+   footprint as the primary button it sits under. */
 .googleRow {
   position: relative;
   display: flex;
   justify-content: center;
-  min-height: 44px;
+  min-height: 40px;
 }
 
 .googleButton {
@@ -317,13 +318,15 @@
   width: 100%;
 }
 
-/* Covers the Google button while the form is submitting, so a second sign-in cannot
-   race the first. Transparent: the button underneath still reads as a button. */
-.googleDisabled {
-  position: absolute;
-  inset: 0;
+/* Dimmed and inert while a sign-in is in flight, so a second one cannot race it.
+   `pointer-events` is what actually stops the click; the fade is the hint. */
+.googleRowBusy {
+  opacity: 0.55;
+  pointer-events: none;
 }
 
+/* Shown instead of the button when Google's script cannot be reached: the same
+   surface as the fields, so the card never collapses or jumps. */
 .googleFallback {
   width: 100%;
   padding: 11px 14px;
@@ -333,4 +336,9 @@
   color: var(--text-2);
   font-size: 13.5px;
   text-align: center;
+  transition: background 120ms ease;
+}
+
+.googleFallback:hover {
+  background: var(--bg-hover);
 }

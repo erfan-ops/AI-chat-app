@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { resolveTheme, useTheme } from '../../theme/themeStore'
 import { Spinner } from '../../components/Spinner'
 import styles from './AuthPage.module.css'
@@ -31,12 +31,14 @@ interface GoogleAccounts {
         parent: HTMLElement,
         options: {
           type?: 'standard' | 'icon'
-          theme?: 'outline' | 'filled_blue' | 'filled_black'
+          theme?: 'outline' | 'filled_blue' | 'filled_black' | 'outline_dark'
           size?: 'large' | 'medium' | 'small'
           text?: 'signin_with' | 'signup_with' | 'continue_with' | 'signin'
           shape?: 'rectangular' | 'pill' | 'circle' | 'square'
           logo_alignment?: 'left' | 'center'
           width?: number
+          /** Forces the label's language; otherwise the browser's is used. */
+          locale?: string
         },
       ): void
     }
@@ -49,7 +51,10 @@ declare global {
   }
 }
 
-const SCRIPT_SRC = 'https://accounts.google.com/gsi/client'
+// `hl` is how the library's own language is chosen: without it Google follows the
+// browser's preferences, which can label the button in a language the rest of this
+// interface is not written in.
+const SCRIPT_SRC = 'https://accounts.google.com/gsi/client?hl=en'
 
 /** The public OAuth client id. Absent (or empty) means the feature is off here. */
 const CLIENT_ID = import.meta.env.VITE_GOOGLE_CLIENT_ID ?? ''
@@ -95,9 +100,48 @@ export function GoogleSignInButton({ onCredential, disabled = false }: GoogleSig
     callback.current = onCredential
   })
 
+  /** Draw Google's button to fit this layout and this theme.
+   *
+   * Everything here is a knob the library actually offers: the theme has a dark
+   * variant that matches the app's panel colour, `pill` matches the app's other
+   * rounded controls, and `locale: 'en'` keeps the label in the language the rest of
+   * the UI is written in rather than the browser's. */
+  const drawn = useRef('')
+
+  const draw = useCallback(() => {
+    if (!host.current || !window.google?.accounts?.id) return
+    const theme = resolveTheme() === 'dark' ? 'outline_dark' : 'outline'
+    // Measured on the row rather than on the host: the host holds the button, so its
+    // width can depend on what was drawn there last, while the row is simply as wide as
+    // the column of fields this button belongs under. The library caps this at 400px.
+    const row = host.current.parentElement ?? host.current
+    const width = Math.min(400, Math.max(200, Math.round(row.clientWidth)))
+    // Drawing is not free (it builds an element) and the observer below can fire more
+    // than once for the same size, so nothing is redrawn unless something changed.
+    const shape = `${theme}:${width}`
+    if (drawn.current === shape) return
+    drawn.current = shape
+    window.google.accounts.id.renderButton(host.current, {
+      type: 'standard',
+      // Light: white with a hairline border, like every other surface on the card.
+      // Dark: Google's own dark fill, within a shade of --bg-panel.
+      theme,
+      size: 'large',
+      text: 'continue_with',
+      shape: 'pill',
+      logo_alignment: 'left',
+      // Belt and braces with the script's `hl` parameter above: the button asks for
+      // English too, so neither the library nor the button defaults to the browser's
+      // language.
+      locale: 'en',
+      width,
+    })
+  }, [])
+
   useEffect(() => {
     if (!CLIENT_ID) return
     let cancelled = false
+    let cleanup = () => {}
 
     loadGoogleScript()
       .then(() => {
@@ -113,18 +157,14 @@ export function GoogleSignInButton({ onCredential, disabled = false }: GoogleSig
           auto_select: false,
           cancel_on_tap_outside: true,
         })
-        host.current.replaceChildren()
-        id.renderButton(host.current, {
-          type: 'standard',
-          // Outline reads correctly on the light card; on dark it would be a white
-          // slab, so the filled variant follows the app's theme instead.
-          theme: resolveTheme() === 'dark' ? 'filled_black' : 'outline',
-          size: 'large',
-          text: 'continue_with',
-          shape: 'rectangular',
-          logo_alignment: 'left',
-          width: 320,
-        })
+        draw()
+
+        // Google bakes the colours into the element it builds, so a theme or width
+        // change means drawing it again. This is also what keeps the button exactly as
+        // wide as the form controls beside it at any window size.
+        const observer = new ResizeObserver(() => draw())
+        if (host.current?.parentElement) observer.observe(host.current.parentElement)
+        cleanup = () => observer.disconnect()
         setReady(true)
       })
       .catch((error: Error) => {
@@ -133,10 +173,11 @@ export function GoogleSignInButton({ onCredential, disabled = false }: GoogleSig
 
     return () => {
       cancelled = true
+      cleanup()
     }
-    // `theme` is a dependency on purpose: the button is re-rendered when the theme
-    // changes, since GIS bakes the colours into the iframe it builds.
-  }, [theme])
+    // `theme` is a dependency on purpose: the button is drawn again when the theme
+    // changes, since GIS bakes the colours into what it builds.
+  }, [theme, draw])
 
   // Nothing configured: no button, no error, and no request to Google.
   if (!CLIENT_ID) return null
@@ -150,10 +191,9 @@ export function GoogleSignInButton({ onCredential, disabled = false }: GoogleSig
   }
 
   return (
-    <div className={styles.googleRow}>
+    <div className={`${styles.googleRow} ${disabled ? styles.googleRowBusy : ''}`}>
       <div ref={host} className={styles.googleButton} aria-label="Continue with Google" />
       {!ready && <Spinner size={16} label="Loading Google sign-in" />}
-      {disabled && <span className={styles.googleDisabled} aria-hidden="true" />}
     </div>
   )
 }
