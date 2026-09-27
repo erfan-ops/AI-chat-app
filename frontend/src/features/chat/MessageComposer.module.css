@@ -1,6 +1,10 @@
 .wrap {
   flex-shrink: 0;
   padding: 10px var(--composer-gutter) 4px;
+  /* The composer is the bottom-most control in the app: on a phone it has to clear the
+     home indicator, and in landscape the cutout on the side. */
+  padding-right: calc(var(--composer-gutter) + var(--safe-right));
+  padding-bottom: max(4px, var(--safe-bottom));
   background: var(--bg-panel);
   border-top: 1px solid var(--border);
 }
@@ -157,5 +161,37 @@
 @media (max-width: 640px) {
   .hint {
     display: none;
+  }
+}
+
+/* Touch: the composer's own controls grow to thumb size. */
+@media (pointer: coarse) {
+  .wrap {
+    padding-top: 8px;
+    padding-bottom: max(8px, var(--safe-bottom));
+  }
+
+  .replyChipClose {
+    width: 36px;
+    height: 36px;
+  }
+
+  .replyChipClose svg {
+    width: 18px;
+    height: 18px;
+  }
+
+  .send {
+    width: 44px;
+    height: 44px;
+  }
+
+  .send svg {
+    width: 21px;
+    height: 21px;
+  }
+
+  .composer {
+    padding: 6px 6px 6px 14px;
   }
 }

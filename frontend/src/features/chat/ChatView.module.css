@@ -21,6 +21,9 @@
   gap: 12px;
   height: var(--header-height);
   padding: 0 20px;
+  /* The app paints into the display cutout: in landscape the header keeps its
+     controls clear of it rather than sliding under the notch. */
+  padding-right: calc(20px + var(--safe-right));
   background: var(--bg-panel);
   border-bottom: 1px solid var(--border);
   flex-shrink: 0;
@@ -135,6 +138,28 @@
   }
 
   .header {
-    padding: 0 12px;
+    padding-left: 12px;
+    padding-right: calc(12px + var(--safe-right));
+  }
+}
+
+/* Touch: the two header controls are the whole navigation on a phone. */
+@media (pointer: coarse) {
+  .back,
+  .sidebarToggle {
+    width: 40px;
+    height: 40px;
+    margin-left: -10px;
+  }
+
+  .back svg,
+  .sidebarToggle svg {
+    width: 24px;
+    height: 24px;
+  }
+
+  /* The empty-state toggle floats in the corner and has no row to sit in. */
+  .sidebarToggleFloating {
+    margin-left: 0;
   }
 }

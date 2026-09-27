@@ -9,9 +9,12 @@
 .content {
   display: flex;
   flex-direction: column;
+  /* Comfortable reading measure on a wide screen; on a narrow one this is simply the
+     width available, minus the cutout inset in landscape. */
   max-width: 860px;
   margin: 0 auto;
   padding: 14px 20px 18px;
+  padding-right: calc(20px + var(--safe-right));
 }
 
 .sentinel {
@@ -326,6 +329,7 @@
 @media (max-width: 640px) {
   .content {
     padding: 10px 12px 14px;
+    padding-right: calc(12px + var(--safe-right));
   }
 
   .bubble {

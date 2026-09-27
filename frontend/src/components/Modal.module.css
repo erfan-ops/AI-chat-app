@@ -5,6 +5,11 @@
   display: grid;
   place-items: center;
   padding: 24px;
+  /* `dvh`, not `vh`: on a phone the overlay has to end where the visible viewport
+     ends, or a dialog centred in it sits partly under the URL bar. The extra bottom
+     padding keeps a dialog clear of the home indicator. */
+  height: 100dvh;
+  padding-bottom: max(24px, var(--safe-bottom));
   background: var(--bg-overlay);
   backdrop-filter: blur(2px);
   animation: fade-in 140ms ease-out;
@@ -23,7 +28,9 @@
   display: flex;
   flex-direction: column;
   width: 100%;
-  max-height: min(80vh, 720px);
+  /* Fits whatever height is actually available — a short landscape phone included —
+     and scrolls its own body rather than the page behind it. */
+  max-height: min(720px, calc(100dvh - 48px));
   background: var(--bg-panel);
   border: 1px solid var(--border);
   border-radius: var(--radius-lg);
@@ -97,4 +104,41 @@
 .body {
   padding: 18px 22px 22px;
   overflow-y: auto;
+}
+
+/* ---- Narrow screens ----
+   The dialog already shrinks to the viewport; what it needs at 320px is its padding
+   back, so the form inside is not squeezed into a column of 220px. */
+
+@media (max-width: 480px) {
+  .overlay {
+    padding: 12px;
+    padding-bottom: max(12px, var(--safe-bottom));
+  }
+
+  .panel {
+    max-height: calc(100dvh - 24px);
+  }
+
+  .header {
+    padding: 14px 16px 12px;
+  }
+
+  .body {
+    padding: 16px 16px 18px;
+  }
+}
+
+/* Touch: closing a dialog is a thumb action. */
+@media (pointer: coarse) {
+  .close {
+    width: 40px;
+    height: 40px;
+    margin-right: -6px;
+  }
+
+  .close svg {
+    width: 20px;
+    height: 20px;
+  }
 }

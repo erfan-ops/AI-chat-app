@@ -1,6 +1,7 @@
 .host {
   position: fixed;
-  bottom: 20px;
+  /* Above the on-screen keyboard's home-indicator strip as well as the usual margin. */
+  bottom: calc(20px + var(--safe-bottom));
   left: 50%;
   transform: translateX(-50%);
   display: flex;
@@ -8,7 +9,9 @@
   align-items: center;
   gap: 8px;
   z-index: 1000;
-  width: min(560px, calc(100vw - 32px));
+  /* `100%` of the fixed containing block, not `100vw`: the two differ by the width of
+     a scrollbar on a desktop, and `100vw` would then push the host past the edge. */
+  width: min(560px, calc(100% - 32px));
   pointer-events: none;
 }
 

@@ -40,7 +40,10 @@
     inset: 0;
     z-index: 10;
     width: 100%;
-    max-width: 420px;
+    /* Never wider than the screen it slides over; the cap keeps the drawer from
+       looking like a desktop panel on a tablet, and `100%` (not `100vw`) keeps it
+       from extending under a scrollbar on a narrow desktop window. */
+    max-width: min(420px, 100%);
     box-shadow: var(--shadow-lg);
     transform: translateX(-102%);
     transition: transform 200ms ease;
@@ -54,11 +57,5 @@
 
   .chatPane {
     flex: 1;
-  }
-}
-
-@media (max-width: 480px) {
-  .sidebarPane {
-    max-width: 100%;
   }
 }

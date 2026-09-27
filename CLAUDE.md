@@ -129,3 +129,8 @@ frontend/ React 19 SPA: feature folders, TanStack Query for server state, SSE vi
 - Frontend types mirror the backend Pydantic schemas one-to-one
   (`frontend/src/types/api.ts`); timestamps are naive-UTC ISO strings — parse
   with `parseIsoUtc` from `utils/dates.ts`.
+- Responsive layout is measured, not eyeballed: `npm run e2e:responsive` walks every
+  surface at 21 viewport sizes and fails on horizontal overflow, a shell taller than
+  the screen, sub-36px touch targets or hover-only affordances. Layout CSS changes go
+  with a run of it. The shaped decisions (800px drawer, `clamp()` sidebar, `dvh` shell,
+  `--safe-*` insets, `(pointer: coarse)` sizing) are documented in `frontend/README.md`.

@@ -156,6 +156,32 @@
   height: 15.5px;
 }
 
+/* ---- Touch ----
+   The row actions are a hover affordance on a desktop, and there is no hover on a
+   phone or tablet: without this they are simply unreachable there. They stay where
+   they are (over the right of the row, where nothing important lives once the
+   timestamp is dropped) but are always visible, and sized for a thumb. */
+@media (pointer: coarse) {
+  .actions {
+    opacity: 1;
+    pointer-events: auto;
+  }
+
+  .time {
+    display: none;
+  }
+
+  .actionButton {
+    width: 40px;
+    height: 40px;
+  }
+
+  .actionButton svg {
+    width: 18px;
+    height: 18px;
+  }
+}
+
 /* ---- Inline rename ---- */
 
 .itemEditing:hover {

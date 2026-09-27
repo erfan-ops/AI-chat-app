@@ -46,10 +46,11 @@ frontend's env — the app never sees database credentials or API keys.
 Other scripts:
 
 ```bash
-npm run build      # type-check (tsc -b) + production build
-npm run lint       # oxlint
-npm run e2e        # full browser E2E against the real backend (needs `npm run dev` running)
-npm run e2e:layout # layout/visual-state checks (light, dark, mobile)
+npm run build         # type-check (tsc -b) + production build
+npm run lint          # oxlint
+npm run e2e           # full browser E2E against the real backend (needs `npm run dev` running)
+npm run e2e:layout    # layout/visual-state checks (light, dark, mobile)
+npm run e2e:responsive # the responsive audit: every surface, 21 viewport sizes
 ```
 
 The E2E scripts drive the real UI in the system Chrome via Playwright and cover:
@@ -57,6 +58,15 @@ sign-up → sidebar empty state → characters/models from the API → create co
 send message → streamed reply → history after reload → switching conversations →
 deleting conversations. They also fail on console errors or failed API requests.
 They can target any running instance, e.g. `APP_URL=http://localhost:5932 npm run e2e`.
+
+`e2e:responsive` is the one to run after touching layout CSS. It walks the pages, the
+app shell, every dialog and the two viewport-fixed layers (the message menu and a
+toast) at 21 sizes — 320×568 up to 2560×1440, plus both landscape phones — and reports
+what a screenshot cannot show: page-level horizontal overflow, elements crossing the
+viewport edge, containers that grew a horizontal scrollbar, a shell taller than the
+screen, touch targets under 36px, and affordances that exist only on hover. It also
+signs in through a real authenticator enrolment to reach the second-factor and
+password-recovery code steps, which are otherwise only reachable with a code.
 
 ## Project structure
 
@@ -119,6 +129,35 @@ Latin on the system stack even though the family is listed first, and it makes t
 browser fetch the font only once Persian text actually appears on screen. To bundle a
 face for another script, add a `@font-face` with that script's `unicode-range` and put
 its family at the front of the `body` stack.
+
+**Responsive layout.** One shell, two arrangements, and no widths that assume a device:
+
+- **The shell** (`AppShell.module.css`) is a two-pane flex row — a conversation panel
+  beside the chat — that becomes a slide-over drawer at **800px**, the one breakpoint
+  where the layout genuinely changes shape rather than merely tightening. The panel is
+  `clamp(272px, 30vw, 320px)`, so a tablet gives the chat more room while a desktop
+  keeps the familiar 320px.
+- **Sizes that scale rather than switch**: the modal panel is capped at
+  `min(720px, 100dvh - 48px)` and the crop viewport at `clamp(180px, 38dvh, 300px)`, so
+  a short screen gets a shorter dialog instead of a scrolling one. The chat column
+  (`max-width: 860px`, message bubbles at 84% under 640px) keeps a readable measure on
+  an ultrawide and still wraps a 180-character unbroken string on a 320px phone.
+- **Smaller breakpoints only where content runs out of room** — 720px hides the auth
+  page's brand panel, 640px tightens the message list and the new-chat stepper, 480px
+  stacks the persona form's two-column rows and gives dialogs their padding back, and
+  400px lets the settings option rows wrap instead of squeezing three labels into
+  228px.
+- **Viewport and cutout**: `index.html` sets `viewport-fit=cover` and
+  `interactive-widget=resizes-content`, `html/body/#root` are `100dvh` (with a `vh`
+  fallback), and the composer, sidebar, chat header, dialogs and toasts pad themselves
+  with `env(safe-area-inset-*)` via the `--safe-*` tokens — so the composer sits above
+  the on-screen keyboard and clear of the home indicator rather than under either.
+- **Touch** is a pointer capability, not a width: under `(pointer: coarse)` the icon
+  controls grow to 40px, the composer's send button to 44px, and the conversation row's
+  rename/delete buttons — hover-only by design on a desktop — become always visible,
+  because there is no hover on a phone.
+
+All of it is measured by `npm run e2e:responsive`.
 
 ## API integration notes
 

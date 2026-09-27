@@ -67,10 +67,15 @@ the API. Nothing is hardcoded or mocked.
   is scoped the same way for everyone (built-in + your own) — administrators reach
   other characters through id-based reads and CRUD.
 - **Modern UI** — light/dark theme, following the OS or pinned per browser in
-  settings; mobile-friendly layout, avatars with initial fallbacks, typing
+  settings; avatars with initial fallbacks, typing
   indicator, and a toasts/error system.
   Persian text renders in a bundled IRANYekanX webfont (Latin keeps the system
   font stack).
+- **Responsive by construction** — one shell that reflows from a 320px phone (the
+  conversation panel becomes a drawer, the composer keeps clear of the on-screen
+  keyboard and home indicator) to an ultrawide display (the chat keeps a readable
+  measure). Touch is treated as a capability, not a width: icon controls and the
+  conversation row's actions grow to thumb size, and nothing is hover-only.
 
 ## How it works
 
@@ -241,6 +246,7 @@ npm run build                 # type-check (tsc -b) + production build
 npm run e2e                   # Playwright: full user flow against a running
                               #   backend + dev server (sign-up → chat → stream)
 npm run e2e:layout            # layout checks (light, dark, mobile)
+npm run e2e:responsive        # responsive audit: every surface × 21 viewport sizes
 ```
 
 The e2e scripts drive the real UI in system Chrome via Playwright and fail on

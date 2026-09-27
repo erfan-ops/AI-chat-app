@@ -37,7 +37,10 @@
 .cropArea {
   position: relative;
   width: 100%;
-  height: 300px;
+  /* A square-ish viewport for the crop, as tall as the dialog can spare: on a short
+     screen (a phone in landscape, mainly) a fixed 300px would push the zoom slider and
+     the buttons out of the dialog's scroll area. */
+  height: clamp(180px, 38dvh, 300px);
   border-radius: var(--radius-md);
   overflow: hidden;
   background: var(--bg-input);
@@ -128,4 +131,16 @@
   clip-path: inset(50%);
   white-space: nowrap;
   border: 0;
+}
+
+/* Touch: picking a file and the zoom slider are the controls a thumb has to hit. */
+@media (pointer: coarse) {
+  .primary,
+  .ghost {
+    padding: 11px 16px;
+  }
+
+  .zoom {
+    height: 28px;
+  }
 }

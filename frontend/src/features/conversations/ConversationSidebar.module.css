@@ -2,6 +2,10 @@
   display: flex;
   flex-direction: column;
   height: 100%;
+  /* The app paints into the display cutout (viewport-fit=cover), so the panel keeps its
+     content clear of it — in landscape that is the notch on one side. The padding is on
+     the element that paints the background, so the panel still reaches the screen edge. */
+  padding-left: var(--safe-left);
   background: var(--bg-sidebar);
   border-right: 1px solid var(--border);
 }
@@ -221,6 +225,9 @@
   align-items: center;
   gap: 11px;
   padding: 12px 16px;
+  /* The panel is full height on a phone: keep the current user's row above the home
+     indicator rather than under it. */
+  padding-bottom: max(12px, var(--safe-bottom));
   border-top: 1px solid var(--border);
   flex-shrink: 0;
 }
@@ -271,3 +278,34 @@
   width: 18px;
   height: 18px;
 }
+
+/* ---- Touch ----------------------------------------------------------------
+   A finger is not a mouse pointer: the header controls grow to a comfortable target
+   size, and the row actions stop being hover-only (see ConversationListItem). */
+
+@media (pointer: coarse) {
+  .logout,
+  .footerAction {
+    width: 40px;
+    height: 40px;
+  }
+
+  .logout svg,
+  .footerAction svg {
+    width: 20px;
+    height: 20px;
+  }
+
+  .newChat {
+    padding: 13px 16px;
+  }
+
+  .loadMore {
+    padding: 10px 18px;
+  }
+
+  .emptyAction {
+    padding: 11px 20px;
+  }
+}
+

@@ -9,7 +9,8 @@
     "lint": "oxlint",
     "preview": "vite preview",
     "e2e": "node e2e/verify-flow.mjs",
-    "e2e:layout": "node e2e/layout-check.mjs"
+    "e2e:layout": "node e2e/layout-check.mjs",
+    "e2e:responsive": "node e2e/responsive-check.mjs"
   },
   "dependencies": {
     "@tanstack/react-query": "^5.101.4",

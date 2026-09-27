@@ -299,3 +299,45 @@ select.input {
   line-height: 1.5;
   color: var(--danger);
 }
+
+/* ---- Responsive ----
+   Three options side by side ("Light / Dark / System", and the same row again for the
+   delivery method) fit on a desktop dialog. At 320px they do not: each keeps a
+   readable minimum and the row wraps instead of squeezing the labels. */
+
+.themeRow {
+  flex-wrap: wrap;
+}
+
+.themeOption {
+  flex: 1 1 88px;
+}
+
+/* A verified contact is a label, a value and an action on one line: the value
+   truncates (it is an address or a number), the action stays whole. */
+@media (max-width: 400px) {
+  .contact {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 4px;
+  }
+
+  .contactValue {
+    width: 100%;
+  }
+}
+
+/* Touch: the text actions in this dialog are made of type alone, which is a small
+   target for a thumb. */
+@media (pointer: coarse) {
+  .contactAction {
+    padding: 6px 2px;
+    margin: -6px -2px;
+  }
+
+  .qrWrap svg {
+    width: 100%;
+    max-width: 200px;
+    height: auto;
+  }
+}

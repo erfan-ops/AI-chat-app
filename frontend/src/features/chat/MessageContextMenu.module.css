@@ -2,6 +2,9 @@
   position: fixed;
   z-index: 100;
   min-width: 176px;
+  /* The component clamps this to the viewport in JS; this is the belt to that braces,
+     for a viewport narrower than the menu itself. */
+  max-width: calc(100vw - 16px);
   padding: 6px;
   background: var(--bg-panel);
   border: 1px solid var(--border);
@@ -45,4 +48,12 @@
   height: 18px;
   color: var(--text-2);
   flex-shrink: 0;
+}
+
+/* Touch: this menu is opened by a tap or a hold, and its rows are the only way to
+   reply or copy on a phone. */
+@media (pointer: coarse) {
+  .item {
+    padding: 12px 10px;
+  }
 }

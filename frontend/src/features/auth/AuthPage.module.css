@@ -3,6 +3,9 @@
   place-items: center;
   min-height: 100%;
   padding: 24px;
+  /* Signed-out pages are the ones a phone shows with the keyboard open: keep the card
+     clear of the cutout and let the insets be whatever the device says. */
+  padding-bottom: max(24px, var(--safe-bottom));
   background: var(--bg-app);
 }
 
@@ -10,7 +13,7 @@
   display: grid;
   grid-template-columns: minmax(0, 1fr) minmax(0, 1.15fr);
   width: min(860px, 100%);
-  min-height: 480px;
+  min-height: min(480px, calc(100dvh - 48px));
   background: var(--bg-panel);
   border: 1px solid var(--border);
   border-radius: var(--radius-xl);
@@ -216,6 +219,29 @@
 
   .formSection {
     padding: 24px 26px 32px;
+  }
+}
+
+/* The narrowest phones and a phone in landscape: less frame, more form. */
+@media (max-width: 400px) {
+  .page {
+    padding: 12px;
+    padding-bottom: max(12px, var(--safe-bottom));
+  }
+
+  .formSection {
+    padding: 20px 18px 26px;
+  }
+}
+
+@media (max-height: 560px) {
+  .page {
+    padding-top: 12px;
+    padding-bottom: max(12px, var(--safe-bottom));
+  }
+
+  .formSection {
+    padding-top: 20px;
   }
 }
 
