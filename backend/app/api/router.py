@@ -11,6 +11,7 @@ from app.api.routes import (
     memories,
     messages,
     otp,
+    password_reset,
     personas,
     totp,
     users,
@@ -18,6 +19,7 @@ from app.api.routes import (
 
 api_router = APIRouter()
 api_router.include_router(auth.router)
+api_router.include_router(password_reset.router)
 api_router.include_router(users.router)
 api_router.include_router(otp.router)
 api_router.include_router(totp.router)

@@ -11,7 +11,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.ai.registry import create_provider
 from app.core.config import Settings, get_settings
-from app.core.security import InvalidTokenError, TokenManager
+from app.core.security import InvalidTokenError, PasswordManager, TokenManager
 from app.db.database import SessionFactory
 from app.db.models.user import User
 from app.db.repositories.users import UserRepository
@@ -24,6 +24,7 @@ from app.services.google_auth_service import GoogleAuthService
 from app.services.otp_audit import OtpAudit
 from app.services.otp_delivery import OtpDeliveryService
 from app.services.otp_service import OtpService
+from app.services.password_reset_service import PasswordResetService
 from app.services.sms_service import SmsService
 from app.services.time_service import TimeService
 from app.services.totp_service import TotpService
@@ -131,6 +132,31 @@ def get_otp_delivery_service(
 def get_otp_service(settings: Annotated[Settings, Depends(get_settings)]) -> OtpService:
     """In-process challenge store; overridable in tests (see conftest)."""
     return OtpService(settings)
+
+
+@lru_cache
+def get_password_reset_service(
+    settings: Annotated[Settings, Depends(get_settings)],
+) -> PasswordResetService:
+    """In-process reset state: outstanding codes and issued authorizations.
+
+    Cached, and deliberately so: the authorizations it hands out live in *this*
+    instance, so a request that verifies a code and the request that spends the
+    authorization must reach the same object. (Tests override it with one bound to
+    their clock.)
+    """
+    return PasswordResetService(settings)
+
+
+@lru_cache
+def get_password_manager() -> PasswordManager:
+    """Argon2id hashing and verification — the application's one policy for passwords.
+
+    Zero-argument so it can be overridden like any other dependency; it holds no state,
+    and both the login flow and a password reset hash through this same class, so the
+    two can never drift into different parameters.
+    """
+    return PasswordManager()
 
 
 def get_session_factory() -> async_sessionmaker[AsyncSession]:

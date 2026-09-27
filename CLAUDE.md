@@ -54,6 +54,16 @@ frontend/ React 19 SPA: feature folders, TanStack Query for server state, SSE vi
   `VITE_GOOGLE_CLIENT_ID` is unset) and posts the credential it returns; the backend
   verifies it against Google's published keys and answers with the same payload
   `/auth/login` does. No client secret exists — the ID-token flow exchanges nothing.
+- **Forgot password** (`app/services/password_reset_service.py`,
+  `POST /auth/password-reset/{request,verify,complete}`): three public steps, and the
+  middle one is the security boundary — the API verifies the code itself and mints a
+  ten-minute, single-use authorization bound to that account, so `verify` changes nothing
+  and `complete` accepts nothing but that token (a client asserting `otpVerified` is
+  ignored). Recovery reuses the existing challenge store, providers and TOTP secret
+  behind `purpose="password_reset"`, whose send limits are their own (a reset cannot lock
+  anyone out of signing in, and vice versa); the per-address window counts recovery
+  *requests* rather than sends so a 429 never reveals whether an account exists.
+  Decisions and the session-revocation limitation: `docs/password-reset-notes.md`.
 - **AI streaming flow** (`app/services/ai_service.py`): `POST /conversations/{id}/messages`
   persists the user message pre-flight, streams SSE (`message.created` →
   `message.delta`* → `message.completed`), then persists the assistant message.
@@ -87,6 +97,11 @@ frontend/ React 19 SPA: feature folders, TanStack Query for server state, SSE vi
 - **Reply flow**: any message (user or assistant) can carry `reply_to_id`;
   `MessageList` renders the quote by looking the target up in loaded pages
   (degrades gracefully when the target is older than the loaded window).
+- **No router, one path exception**: `App.tsx` renders `AppShell` or `AuthPage` from
+  session state; `/reset-password` (a signed-out visitor only) is the single address read
+  from `window.location`, through `utils/path.ts` — it has to work when opened directly,
+  because its visitor cannot sign in. `ResetPasswordPage` is a four-step script over the
+  reset API; the security lives entirely server-side.
 - **Settings & two-step verification**: the sidebar footer opens
   `features/settings/SettingsModal` — username (unique across accounts; the API answers
   `409` when taken, and tokens survive a rename since they carry the user id), display

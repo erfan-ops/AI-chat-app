@@ -63,7 +63,7 @@ They can target any running instance, e.g. `APP_URL=http://localhost:5932 npm ru
 ```
 src/
   main.tsx                 # entry: QueryClientProvider + ToastHost
-  App.tsx                  # session gate: AuthPage | AppShell
+  App.tsx                  # session gate: AuthPage | AppShell | ResetPasswordPage
   AppShell.tsx             # two-pane layout + pure-UI state (active chat, drawer, modal)
   styles/tokens.css        # design tokens (light + dark), reset, focus/scroll styles,
                            #   Persian webfont @font-face (Arabic-script unicode-range)
@@ -76,6 +76,7 @@ src/
   session/authSession.ts   # JWT + user in localStorage, expiry, reactive subscription
   theme/themeStore.ts      # light/dark/system choice → data-theme on <html>
   utils/dates.ts errors.ts # naive-UTC ISO parsing (backend stores UTC without zone), errors
+  utils/path.ts            # the one path the app reads (`/reset-password`) + navigate()
   utils/cloudinary.ts      # avatar delivery URLs: on-the-fly resize + auto format/quality
   utils/cropImage.ts       # 1:1 crop → 512×512 WebP in the browser (canvas, no upload)
   components/              # shared UI: Avatar, Modal, Spinner, EmptyState, ErrorState,
@@ -87,6 +88,9 @@ src/
                            #   another method), and the Google button
     auth/GoogleSignInButton # loads Google Identity Services on demand, hosts its own
                            #   button, and forwards the credential it returns
+    auth/ResetPasswordPage # forgot password: identifier → method → code → new password,
+                           #   reachable directly at /reset-password (see utils/path.ts);
+                           #   the security is entirely server-side, this is the script
     conversations/         # sidebar, list items (rename/delete), infinite list query
     characters/            # cached character lookup (avatars), create + profile dialogs,
                            #   avatar picker (crop → upload to Cloudinary)
@@ -119,7 +123,8 @@ its family at the front of the `body` stack.
 ## API integration notes
 
 - **Auth**: all endpoints except `/auth/register`, `/auth/login`, `/auth/login/otp`,
-  `/auth/login/otp/method` and `/auth/google` need a JWT Bearer token. The client attaches it automatically.
+  `/auth/login/otp/method`, `/auth/google` and the three `/auth/password-reset/*`
+  endpoints need a JWT Bearer token. The client attaches it automatically.
   `AppShell` also refreshes the profile once on load (`GET /me`), because the session —
   and the user object inside it — is persisted in localStorage and can outlive a deploy
   that adds a field to it; until that refresh lands, a value the UI cannot interpret is
@@ -175,6 +180,22 @@ its family at the front of the `body` stack.
   email instead", calling `/auth/login/otp/method`. That choice lasts for that login
   only and never changes the saved default; the response carries no address or number,
   only which channel was used.
+- **Forgot password**: "Forgot password?" under the sign-in form, and `/reset-password`
+  itself, both lead to `ResetPasswordPage` — a four-step script (identifier → method →
+  code → new password) over the three reset endpoints. It is the app's **only** path:
+  there is no router, and `App.tsx` renders this page for a signed-out visitor at that
+  address so a bookmark, a password manager entry or a link someone was sent all work.
+  Nothing the page holds is a security decision — it carries a `challenge_id` between
+  two steps and the `reset_token` the API issued between the last two, and every rule
+  (was the code right, is it still current, may this password be set) is enforced
+  server-side. Two consequences visible in the UI: the first answer says the same thing
+  whatever the identifier turns out to be, and the page offers whichever methods came
+  back rather than asking the user which they have. A `complete` rejected as expired
+  drops back to the code step with the server's own wording and its own way forward
+  ("Send a new code"); a password the server rejects on length never reaches it — the
+  schema refuses it first, so the authorization is still good and the user just fixes
+  the field. The password is typed twice, matched in the form, and on success the user
+  signs in normally: a reset deliberately does not sign anyone in.
 - **Theme**: light/dark/system is a per-browser preference in `theme/themeStore.ts`,
   applied as `data-theme` on `<html>` — which is what `styles/tokens.css` keys the
   dark palette off. A pre-paint script in `index.html` applies it before the first

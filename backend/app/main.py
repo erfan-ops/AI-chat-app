@@ -93,11 +93,12 @@ def create_app() -> FastAPI:
         version="0.1.0",
         description=(
             "Backend API for the AI chat application: authentication (including "
-            "two-step verification by SMS, email or an authenticator app), AI "
-            "characters, conversations, messages, memories, and streamed AI replies "
-            "(SSE). "
-            "All endpoints except `/auth/register`, `/auth/login` and `/auth/login/otp` "
-            "require a Bearer token."
+            "two-step verification by SMS, email or an authenticator app, and password "
+            "recovery), AI characters, conversations, messages, memories, and streamed "
+            "AI replies (SSE). "
+            "Only the endpoints under `/auth` are public — signing in, signing in with "
+            "Google, completing a two-step login, and the three password-reset steps; "
+            "everything else requires a Bearer token."
         ),
         lifespan=lifespan,
     )

@@ -54,6 +54,18 @@ _Key = TypeVar("_Key")
 OTP_CODE_DIGITS = 6
 _PER_DAY_SECONDS = 24 * 60 * 60
 
+# Which budget a send draws on. Signing in and confirming a contact have always shared
+# one — a code sent for either has always spent the other's cooldown and daily
+# allowance — and that stays true, because changing it would change behaviour users
+# already rely on. Password reset is deliberately its own: asking for a recovery code
+# must not spend the sign-in budget (it cannot lock a user out of signing in), and a
+# failed sign-in must not eat the allowance needed to recover the account.
+_LIMIT_GROUPS: dict[Purpose, str] = {
+    "login": "login",
+    "verify_contact": "login",
+    "password_reset": "password_reset",
+}
+
 # Requests older than this are not retained at all.
 _MAX_DAILY_HISTORY = 64
 
@@ -107,15 +119,22 @@ class OtpService:
         # has accepted the message (see claim/commit), so a failed send cannot take
         # away a code the user already has.
         self._pending: dict[str, Challenge] = {}
-        # Cooldown and daily budget are keyed differently on purpose: the cooldown
-        # is per (user, method) so switching to the other channel is immediate,
-        # while the daily cap stays per user — switching must not buy extra sends.
-        self._last_send: dict[tuple[int, OtpMethod], float] = {}
-        self._sends: dict[int, deque[float]] = {}
+        # Cooldown and daily budget are keyed differently on purpose: the cooldown is
+        # per (group, user, method) so switching to the other channel is immediate, while
+        # the daily cap stays per (group, user) — switching must not buy extra sends.
+        # Both carry the limit group, which is what keeps a password reset out of the
+        # sign-in flow's budget (see _LIMIT_GROUPS).
+        self._last_send: dict[tuple[str, int, OtpMethod], float] = {}
+        self._sends: dict[tuple[str, int], deque[float]] = {}
         # Keyed by destination and by client address rather than by account: these
         # bound what one *place* can be asked to receive, whichever accounts ask.
         self._destination_sends: dict[tuple[OtpMethod, str], deque[float]] = {}
         self._ip_sends: dict[str, deque[float]] = {}
+        # The same idea for *requests* rather than messages, and deliberately a window
+        # of its own: it is fed by flows that may send nothing (see
+        # ``reserve_request_slot``), and sharing one deque with the messages above
+        # would let a sweep of one endpoint refuse the other's sends from that address.
+        self._ip_requests: dict[str, deque[float]] = {}
         # Wrong authenticator codes per user, and the lockout they earn. A sent code
         # is throttled by its send limits; an authenticator challenge sends nothing,
         # so the attempt side is the only place this can be bounded.
@@ -130,17 +149,18 @@ class OtpService:
             for challenge_id in [key for key, value in store.items() if value.expires_at <= now]:
                 del store[challenge_id]
         cutoff = now - _PER_DAY_SECONDS
-        for user_id, sends in list(self._sends.items()):
+        for key, sends in list(self._sends.items()):
             while sends and sends[0] < cutoff:
                 sends.popleft()
             if not sends:
-                del self._sends[user_id]
+                del self._sends[key]
         # The rolling windows hold at most ``limit`` entries each, but their *keys*
         # accumulate — one per destination and per address seen. An entry that has
         # aged out can never block anything again, so it goes.
         window = self._settings.otp_rate_window_seconds
         self._prune_window(self._destination_sends, now)
         self._prune_window(self._ip_sends, now)
+        self._prune_window(self._ip_requests, now)
         for user_id, failures in list(self._totp_failures.items()):
             while failures and failures[0] < now - window:
                 failures.popleft()
@@ -219,12 +239,33 @@ class OtpService:
                 lockout_seconds=lockout,
             )
 
+    @staticmethod
+    def _limit_group(purpose: Purpose) -> str:
+        """The budget a code for this purpose draws on — see ``_LIMIT_GROUPS``."""
+        return _LIMIT_GROUPS[purpose]
+
+    def _daily_cap(self, group: str) -> int:
+        """Requests per day for one limit group."""
+        if group == "password_reset":
+            return self._settings.password_reset_max_sends_per_day
+        return self._settings.otp_max_sends_per_day
+
     def _hash(self, challenge_id: str, code: str) -> bytes:
         return hmac.new(self._hash_key, f"{challenge_id}:{code}".encode(), sha256).digest()
 
-    def _clear_user_challenges(self, user_id: int) -> None:
+    def _clear_user_challenges(self, user_id: int, *, purpose: Purpose | None = None) -> None:
+        """Drop this user's live challenges, optionally only one flow's.
+
+        ``commit`` passes its own purpose, so a new code replaces the previous code *of
+        the same flow* and nothing else: a password reset must not invalidate a code the
+        user is already holding for signing in, and a fresh sign-in code must not kill a
+        reset in progress. ``None`` clears every flow, which is what turning two-step
+        verification off wants.
+        """
         for challenge_id in [
-            key for key, value in self._challenges.items() if value.user_id == user_id
+            key
+            for key, value in self._challenges.items()
+            if value.user_id == user_id and (purpose is None or value.purpose == purpose)
         ]:
             del self._challenges[challenge_id]
 
@@ -240,6 +281,7 @@ class OtpService:
         *,
         user_id: int,
         method: OtpMethod,
+        purpose: Purpose,
         destination: str | None = None,
         client_ip: str | None = None,
         sends_message: bool = True,
@@ -260,9 +302,10 @@ class OtpService:
         """
         now = self._clock()
         self._prune(now)
+        group = self._limit_group(purpose)
 
         cooldown = self._settings.otp_resend_cooldown_seconds
-        last_send = self._last_send.get((user_id, method))
+        last_send = self._last_send.get((group, user_id, method))
         if last_send is not None and now - last_send < cooldown:
             wait = int(cooldown - (now - last_send)) + 1
             raise RateLimitError(
@@ -291,19 +334,20 @@ class OtpService:
 
         sends: deque[float] | None = None
         if sends_message:
+            cap = self._daily_cap(group)
             # The deque has to be able to hold a full day's allowance, or it would evict
             # from the left and the cap below could never be reached.
             sends = self._sends.setdefault(
-                user_id, deque(maxlen=max(_MAX_DAILY_HISTORY, self._settings.otp_max_sends_per_day))
+                (group, user_id), deque(maxlen=max(_MAX_DAILY_HISTORY, cap))
             )
-            if len(sends) >= self._settings.otp_max_sends_per_day:
+            if len(sends) >= cap:
                 raise RateLimitError(
                     "Too many codes requested today; try again tomorrow",
                     retry_after_seconds=_PER_DAY_SECONDS,
                 )
 
         # Every limit passed: record the claim.
-        self._last_send[(user_id, method)] = now
+        self._last_send[(group, user_id, method)] = now
         if sends is not None:
             sends.append(now)
         if destination is not None:
@@ -341,7 +385,9 @@ class OtpService:
         self._prune(self._clock())
         self._require_totp_unlocked(user_id)
         if throttled:
-            now = self._reserve(user_id=user_id, method="TOTP", sends_message=False)
+            now = self._reserve(
+                user_id=user_id, method="TOTP", purpose=purpose, sends_message=False
+            )
         else:
             now = self._clock()
         challenge_id = secrets.token_urlsafe(32)
@@ -381,7 +427,11 @@ class OtpService:
         awaits the provider, so two concurrent requests cannot both send.
         """
         now = self._reserve(
-            user_id=user_id, method=method, destination=destination, client_ip=client_ip
+            user_id=user_id,
+            method=method,
+            purpose=purpose,
+            destination=destination,
+            client_ip=client_ip,
         )
         code = f"{secrets.randbelow(10**OTP_CODE_DIGITS):0{OTP_CODE_DIGITS}d}"
         challenge_id = secrets.token_urlsafe(32)
@@ -420,7 +470,7 @@ class OtpService:
         pending = self._pending.pop(challenge_id, None)
         if pending is None or (replaces is not None and self._challenges.get(replaces) is None):
             raise BadRequestError(_CHALLENGE_GONE_MESSAGE)
-        self._clear_user_challenges(pending.user_id)
+        self._clear_user_challenges(pending.user_id, purpose=pending.purpose)
         self._challenges[challenge_id] = pending
 
     def discard(self, challenge_id: str, *, user_id: int) -> None:
@@ -440,7 +490,7 @@ class OtpService:
             return
         self._pending.pop(challenge_id, None)
         self._challenges.pop(challenge_id, None)
-        self._last_send.pop((user_id, challenge.method), None)
+        self._last_send.pop((self._limit_group(challenge.purpose), user_id, challenge.method), None)
 
     def require_live(self, challenge_id: str, *, purpose: Purpose) -> Challenge:
         """Read a live challenge without consuming it, or raise ``BadRequestError``.
@@ -526,6 +576,36 @@ class OtpService:
             destination=challenge.destination,
         )
 
+    def reserve_request_slot(self, *, client_ip: str | None) -> None:
+        """Count one *request* against the caller's address, send or no send.
+
+        The other limits only ever see messages, so a request that sends nothing
+        leaves them untouched. That difference is observable from outside: once an
+        address has spent the window on real sends, a request that *would* send
+        answers 429 while one that would not keeps answering 200 — which is a way to
+        ask "does this account exist?". Password recovery counts every request here
+        instead (see ``PasswordResetService.request``), so both answers stay identical,
+        and sweeping the endpoint is bounded by the address that is doing it.
+
+        Its own window, not the one messages are counted in: a recovery sweep must not
+        be able to stop that address's sign-in codes, nor the other way round. The
+        limit is ``otp_max_sends_per_ip`` — the same "this many per network per window"
+        judgement, applied to requests. Sign-in sends are otherwise untouched: what
+        that window counts is behaviour users already rely on.
+        """
+        if client_ip is None:
+            return
+        now = self._clock()
+        self._prune(now)
+        self._check_window(
+            self._ip_requests,
+            client_ip,
+            limit=self._settings.otp_max_sends_per_ip,
+            now=now,
+            message="Too many codes requested from this network; try again later",
+        )
+        self._ip_requests.setdefault(client_ip, deque()).append(now)
+
     def invalidate_user(self, user_id: int) -> None:
         """Drop a user's outstanding challenges, failure history and lock (2FA off).
 
@@ -545,5 +625,6 @@ class OtpService:
         self._sends.clear()
         self._destination_sends.clear()
         self._ip_sends.clear()
+        self._ip_requests.clear()
         self._totp_failures.clear()
         self._totp_locks.clear()

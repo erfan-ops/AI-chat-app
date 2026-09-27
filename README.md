@@ -35,6 +35,17 @@ the API. Nothing is hardcoded or mocked.
   before any token is issued. Requesting codes is rate-limited per account, per contact
   and per network, and repeated wrong authenticator codes lock that method for a few
   minutes without touching the others. Password-only accounts are unaffected.
+- **Forgot password** — a full recovery flow from the sign-in page (and from
+  `/reset-password`, for when the browser has nothing left to click): enter your
+  username or verified email, choose one of the methods the account actually has —
+  SMS, email, or the authenticator app you already use — enter the code, and set a new
+  password. The code is verified by the API, which then issues a **short-lived,
+  single-use authorization** for one password change; nothing a client says about the
+  code is believed, the authorization works only for the account it was issued to and
+  only on the endpoint that sets the password, and a rejected password (too short)
+  doesn't spend it. Recovery has its **own** send limits, so it can never lock you out
+  of signing in, and answering the first step says nothing about whether an account
+  exists.
 - **AI characters** — built-in characters (visible to everyone) plus user-created
   private ones; each carries a system prompt that shapes its personality.
 - **Streaming chat** — AI replies are *truly* incremental: each generated chunk is
@@ -199,6 +210,7 @@ npm run preview                            # or: npx vite preview --host 0.0.0.0
 | `AI_CONTEXT_MAX_MESSAGES` / `AI_DEFAULT_CONTEXT_CHARS` | `50` / `16000` | History window and context budget |
 | `SMS_IR_API_KEY` / `RESEND_API_KEY` | *(empty)* | One-time-code providers for two-step verification — SMS.ir and Resend. Each empty value disables that channel with a `503` rather than failing at send time |
 | `NTP_SERVER` | `ntp.time.ir` | Clock source for authenticator (TOTP) codes. The offset is measured at startup and refreshed hourly, cached in memory; verifying a code never calls it, and a clock that is unsynchronized or stale refuses authenticator codes with `503` instead of guessing |
+| `PASSWORD_RESET_MAX_SENDS_PER_DAY` / `PASSWORD_RESET_AUTHORIZATION_TTL_SECONDS` | `5` / `600` | Recovery codes per day (its own budget, separate from sign-in codes) and how long the single-use authorization issued after a verified code stays usable |
 
 With the default `AI_PROVIDER=database`, provider, endpoint, API key, and model are
 resolved from the database per conversation — the seeded DeepSeek row works out of

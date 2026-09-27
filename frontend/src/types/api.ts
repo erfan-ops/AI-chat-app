@@ -131,6 +131,44 @@ export interface PasswordChangeRequest {
   new_password: string
 }
 
+/** Body for POST /auth/password-reset/request. */
+export interface PasswordResetRequest {
+  /** Username, or the account's verified email address. */
+  identifier: string
+  /** Which channel to send the code through. Omit it to ask only what the
+   *  account can be recovered by — that call sends nothing. */
+  method?: OtpMethod
+}
+
+/** What a recovery attempt may do next.
+ *
+ *  `method`/`challenge_id` are present only when a code actually went out, and the
+ *  rest of the answer is identical either way: it must not say whether the account
+ *  exists, and it never names a destination. */
+export interface PasswordResetOptions {
+  /** Methods this account can be recovered with — what to offer on the method
+   *  step. Always present, whatever the account turned out to be. */
+  methods: OtpMethod[]
+  method: OtpMethod | null
+  challenge_id: string | null
+  code_expires_in_seconds: number | null
+  message: string
+}
+
+/** The proof that the code was verified: a short-lived, single-use authorization
+ *  for exactly one password change. Not a session — no other endpoint accepts it. */
+export interface PasswordResetAuthorization {
+  reset_token: string
+  expires_in_seconds: number
+}
+
+/** Body for POST /auth/password-reset/complete. */
+export interface PasswordResetCompleteRequest {
+  reset_token: string
+  /** Same rules as registration: at least 8 characters. */
+  new_password: string
+}
+
 export interface UserUpdate {
   username?: string | null
   display_name?: string | null

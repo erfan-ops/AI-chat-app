@@ -121,6 +121,17 @@ class AuthService:
         """Clear throttle state (tests)."""
         self._attempts.reset_all()
 
+    def clear_login_throttle(self, username: str) -> None:
+        """Forget one account's failed logins.
+
+        Called once a password reset has been committed. The failures a user built up
+        while trying to remember the password they have just replaced are about a
+        credential that no longer exists, and leaving them counted would lock the owner
+        out of the account they just recovered. The per-address and per-destination send
+        windows are deliberately *not* cleared: those bound messages, not guesses.
+        """
+        self._attempts.reset(username)
+
     async def register(
         self,
         db: AsyncSession,

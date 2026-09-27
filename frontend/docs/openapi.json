@@ -2,7 +2,7 @@
  "openapi": "3.1.0",
  "info": {
   "title": "AI Chat API",
-  "description": "Backend API for the AI chat application: authentication (including two-step verification by SMS, email or an authenticator app), AI characters, conversations, messages, memories, and streamed AI replies (SSE). All endpoints except `/auth/register`, `/auth/login` and `/auth/login/otp` require a Bearer token.",
+  "description": "Backend API for the AI chat application: authentication (including two-step verification by SMS, email or an authenticator app, and password recovery), AI characters, conversations, messages, memories, and streamed AI replies (SSE). Only the endpoints under `/auth` are public — signing in, signing in with Google, completing a two-step login, and the three password-reset steps; everything else requires a Bearer token.",
   "version": "0.1.0"
  },
  "paths": {
@@ -104,7 +104,7 @@
      "auth"
     ],
     "summary": "Sign in with Google, creating the account on first use",
-    "description": "Exchanges a Google Identity Services credential (the ID token the browser received from Google) for the same access token `POST /auth/login` returns. The credential is verified against Google's published keys \u2014 signature, issuer, audience and expiry \u2014 before anything in it is believed; the Google `sub` claim identifies the account, never the email address.\n\nAn unknown Google account creates a user here, initialised from the verified claims (email, name, and a Cloudinary copy of the profile picture) with no password. A known one signs in unchanged: display name and picture are never rewritten by a later Google sign-in. An email that already belongs to an account created another way is refused with `409` rather than linked.\n\nWhen the account has two-step verification on, no token is issued: the reply carries `otp_required` and a `challenge_id`, exactly as a password login does. Answers `503` when Google sign-in is not configured.",
+    "description": "Exchanges a Google Identity Services credential (the ID token the browser received from Google) for the same access token `POST /auth/login` returns. The credential is verified against Google's published keys — signature, issuer, audience and expiry — before anything in it is believed; the Google `sub` claim identifies the account, never the email address.\n\nAn unknown Google account creates a user here, initialised from the verified claims (email, name, and a Cloudinary copy of the profile picture) with no password. A known one signs in unchanged: display name and picture are never rewritten by a later Google sign-in. An email that already belongs to an account created another way is refused with `409` rather than linked.\n\nWhen the account has two-step verification on, no token is issued: the reply carries `otp_required` and a `challenge_id`, exactly as a password login does. Answers `503` when Google sign-in is not configured.",
     "operationId": "login_with_google_auth_google_post",
     "requestBody": {
      "content": {
@@ -163,7 +163,7 @@
      "auth"
     ],
     "summary": "Complete a two-step login",
-    "description": "Second step for accounts with two-step verification: exchanges the `challenge_id` from `POST /auth/login` plus the code that was sent for the same access token a normal login would have returned. An incorrect or expired code is rejected with 400 \u2014 never 401, which would sign the caller out of an unrelated session.",
+    "description": "Second step for accounts with two-step verification: exchanges the `challenge_id` from `POST /auth/login` plus the code that was sent for the same access token a normal login would have returned. An incorrect or expired code is rejected with 400 — never 401, which would sign the caller out of an unrelated session.",
     "operationId": "login_with_otp_auth_login_otp_post",
     "requestBody": {
      "content": {
@@ -205,7 +205,7 @@
      "auth"
     ],
     "summary": "Send this login's code through the other delivery method",
-    "description": "Sends a fresh code for the same login through `method` instead of the channel the first code used, and returns the new `challenge_id`. This is a choice for this login only: the account's saved default is untouched.\n\n`method` may be `TOTP`, in which case nothing is sent: the challenge is for a code from the account's authenticator app, and no SMS or email goes out.\n\nThe destination is always the one stored on the account \u2014 the request names a channel, never an address. Rejections are 400-level (never 401), and 503 when the account has no verified contact for that channel.",
+    "description": "Sends a fresh code for the same login through `method` instead of the channel the first code used, and returns the new `challenge_id`. This is a choice for this login only: the account's saved default is untouched.\n\n`method` may be `TOTP`, in which case nothing is sent: the challenge is for a code from the account's authenticator app, and no SMS or email goes out.\n\nThe destination is always the one stored on the account — the request names a channel, never an address. Rejections are 400-level (never 401), and 503 when the account has no verified contact for that channel.",
     "operationId": "login_switch_otp_method_auth_login_otp_method_post",
     "requestBody": {
      "content": {
@@ -233,6 +233,150 @@
      },
      "503": {
       "description": "That channel is unavailable for this account"
+     },
+     "422": {
+      "description": "Validation Error",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/auth/password-reset/request": {
+   "post": {
+    "tags": [
+     "auth"
+    ],
+    "summary": "Start a password reset, and optionally send a code",
+    "description": "Looks up the account named by `identifier` (a username, or the account's verified email address) and answers with the methods it can be recovered through. Calling it without `method` only reports those options; calling it with one sends a code through that channel and returns the `challenge_id` the next step needs.\n\nThe answer is the same whether or not the account exists, and it never names a destination — no phone suffix, no address — so it cannot be used to find out who has an account here. A 429 is the one exception, and it is about the caller's own request rate.\n\nRecovery by authenticator app uses the secret already enrolled for two-step verification; nothing is sent, and no code is emailed or texted.",
+    "operationId": "request_password_reset_auth_password_reset_request_post",
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/PasswordResetRequest"
+       }
+      }
+     },
+     "required": true
+    },
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/PasswordResetOptionsRead"
+        }
+       }
+      }
+     },
+     "429": {
+      "description": "Too many codes requested; retry after the given delay"
+     },
+     "503": {
+      "description": "That channel is unavailable for this account"
+     },
+     "422": {
+      "description": "Validation Error",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/auth/password-reset/verify": {
+   "post": {
+    "tags": [
+     "auth"
+    ],
+    "summary": "Verify a recovery code and obtain a reset authorization",
+    "description": "Exchanges the `challenge_id` from `/request` plus the code that was sent for a short-lived, single-use `reset_token`. This endpoint does **not** change the password and this token is not a session: it is accepted by `/complete` alone and grants no access to the API.\n\nThe code is checked here, server-side, against the challenge this API issued — a client cannot assert that verification succeeded. An incorrect or expired code is rejected with 400 (never 401), and the challenge dies after a small number of attempts.",
+    "operationId": "verify_password_reset_auth_password_reset_verify_post",
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/PasswordResetVerifyRequest"
+       }
+      }
+     },
+     "required": true
+    },
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/PasswordResetAuthorizationRead"
+        }
+       }
+      }
+     },
+     "400": {
+      "description": "The code is incorrect or has expired"
+     },
+     "429": {
+      "description": "Too many incorrect authenticator codes; try again later"
+     },
+     "503": {
+      "description": "Authenticator codes cannot be verified right now"
+     },
+     "422": {
+      "description": "Validation Error",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/auth/password-reset/complete": {
+   "post": {
+    "tags": [
+     "auth"
+    ],
+    "summary": "Set a new password with a reset authorization",
+    "description": "Sets the new password for the account the `reset_token` was issued to. The authorization is the *only* accepted proof — there is no request field, cookie or header that can stand in for it — it expires ten minutes after the code was verified, and it is spent by the first successful call, so the same token can never set a second password.\n\nThe password is hashed exactly as it is at registration and at `POST /me/password`. Outstanding sign-in codes and any other reset authorization for the account are discarded at the same time.\n\nSessions are stateless JWTs and are not revoked by this — see `docs/password-reset-notes.md` for what that does and does not mean.",
+    "operationId": "complete_password_reset_auth_password_reset_complete_post",
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/PasswordResetCompleteRequest"
+       }
+      }
+     },
+     "required": true
+    },
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/UserRead"
+        }
+       }
+      }
+     },
+     "400": {
+      "description": "The reset authorization is unknown, expired or already used"
      },
      "422": {
       "description": "Validation Error",
@@ -277,7 +421,7 @@
      "users"
     ],
     "summary": "Update the authenticated user's profile",
-    "description": "Update the username, display name, default AI model and/or profile picture. The username must be unique \u2014 a duplicate is 409. `avatar_url` is the Cloudinary URL the browser uploaded (see `POST /cloudinary/signature`); an explicit `null` removes the picture, so omitting the field is how a client leaves it unchanged.",
+    "description": "Update the username, display name, default AI model and/or profile picture. The username must be unique — a duplicate is 409. `avatar_url` is the Cloudinary URL the browser uploaded (see `POST /cloudinary/signature`); an explicit `null` removes the picture, so omitting the field is how a client leaves it unchanged.",
     "operationId": "update_me_me_patch",
     "requestBody": {
      "content": {
@@ -327,7 +471,7 @@
      "users"
     ],
     "summary": "Change the authenticated user's password",
-    "description": "Replaces the password after checking the current one. A wrong current password is rejected with 400 \u2014 never 401, which would sign the caller out of the session they are asking from \u2014 and repeated failures are throttled by the same counter as login.\n\nExisting access tokens keep working: this codebase has no token revocation, so the new password takes effect at the next sign-in.",
+    "description": "Replaces the password after checking the current one. A wrong current password is rejected with 400 — never 401, which would sign the caller out of the session they are asking from — and repeated failures are throttled by the same counter as login.\n\nExisting access tokens keep working: this codebase has no token revocation, so the new password takes effect at the next sign-in.",
     "operationId": "change_password_me_password_post",
     "requestBody": {
      "content": {
@@ -424,7 +568,7 @@
      "users"
     ],
     "summary": "Confirm the code and enable two-step verification",
-    "description": "Verifies the code from `/me/otp/enable` or `/me/totp/enable`, stores the verified contact (an authenticator secret is already stored) and turns two-step verification on \u2014 a first-time enable also makes that method the default. An invalid or expired code is rejected with 400 and leaves the account unchanged.",
+    "description": "Verifies the code from `/me/otp/enable` or `/me/totp/enable`, stores the verified contact (an authenticator secret is already stored) and turns two-step verification on — a first-time enable also makes that method the default. An invalid or expired code is rejected with 400 and leaves the account unchanged.",
     "operationId": "verify_otp_enable_me_otp_verify_post",
     "requestBody": {
      "content": {
@@ -498,7 +642,7 @@
      "users"
     ],
     "summary": "Start enrolling an authenticator app",
-    "description": "Generates a TOTP secret, stores it, and returns the `otpauth://` URI (for a QR code) plus the Base32 secret for entering by hand.\n\n**Two-step verification is not enabled by this call.** Only a correct code from the authenticator turns it on \u2014 see `POST /me/otp/verify` with the returned `challenge_id`. Enrolling again replaces the previous secret.",
+    "description": "Generates a TOTP secret, stores it, and returns the `otpauth://` URI (for a QR code) plus the Base32 secret for entering by hand.\n\n**Two-step verification is not enabled by this call.** Only a correct code from the authenticator turns it on — see `POST /me/otp/verify` with the returned `challenge_id`. Enrolling again replaces the previous secret.",
     "operationId": "start_totp_enable_me_totp_enable_post",
     "responses": {
      "200": {
@@ -965,7 +1109,7 @@
      "cloudinary"
     ],
     "summary": "Sign a direct-to-Cloudinary upload",
-    "description": "Returns the signature and parameters the browser needs to upload an image straight to Cloudinary: a `character` avatar (the default) or the caller's own `user` picture. The folder is chosen from `kind` server-side and comes back in the response \u2014 the signed request must send it back unchanged. The image never passes through this API, and the API secret is never returned. Answers 503 when the CLOUDINARY_* settings are not configured.",
+    "description": "Returns the signature and parameters the browser needs to upload an image straight to Cloudinary: a `character` avatar (the default) or the caller's own `user` picture. The folder is chosen from `kind` server-side and comes back in the response — the signed request must send it back unchanged. The image never passes through this API, and the API secret is never returned. Answers 503 when the CLOUDINARY_* settings are not configured.",
     "operationId": "create_upload_signature_cloudinary_signature_post",
     "requestBody": {
      "content": {
@@ -1801,7 +1945,7 @@
      "name"
     ],
     "title": "CharacterCreate",
-    "description": "Body for POST /characters.\n\nFor a normal user the owner is always the authenticated user \u2014 never the request\nbody. An administrator may additionally pass ``owner_user_id`` (explicit ``null``\ncreates a global/built-in character) and ``status``.\nLengths mirror the ``CHARACTERS`` column widths."
+    "description": "Body for POST /characters.\n\nFor a normal user the owner is always the authenticated user — never the request\nbody. An administrator may additionally pass ``owner_user_id`` (explicit ``null``\ncreates a global/built-in character) and ``status``.\nLengths mirror the ``CHARACTERS`` column widths."
    },
    "CharacterRead": {
     "properties": {
@@ -1962,7 +2106,7 @@
     },
     "type": "object",
     "title": "CharacterUpdate",
-    "description": "Body for PATCH /characters/{id} \u2014 at least one field must be provided.\n\nOwners may edit ``name``/``description``/``avatar_url``/``system_prompt`` on their\nown characters; ``owner_user_id`` and ``status`` are administrator-only."
+    "description": "Body for PATCH /characters/{id} — at least one field must be provided.\n\nOwners may edit ``name``/``description``/``avatar_url``/``system_prompt`` on their\nown characters; ``owner_user_id`` and ``status`` are administrator-only."
    },
    "ConversationCreate": {
     "properties": {
@@ -2008,7 +2152,7 @@
        }
       ],
       "title": "User Persona Id",
-      "description": "Optional persona the user role-plays as. Must belong to the authenticated user. Omit for no persona \u2014 the AI then just follows the character prompt."
+      "description": "Optional persona the user role-plays as. Must belong to the authenticated user. Omit for no persona — the AI then just follows the character prompt."
      }
     },
     "type": "object",
@@ -2175,7 +2319,7 @@
      "method"
     ],
     "title": "LoginOtpMethodRequest",
-    "description": "Body for POST /auth/login/otp/method \u2014 resend this login's code elsewhere.\n\nOnly the channel is named: the destination always comes from the account, so a\ncaller can never redirect a code to an address of their choosing."
+    "description": "Body for POST /auth/login/otp/method — resend this login's code elsewhere.\n\nOnly the channel is named: the destination always comes from the account, so a\ncaller can never redirect a code to an address of their choosing."
    },
    "LoginOtpRequest": {
     "properties": {
@@ -2199,7 +2343,7 @@
      "code"
     ],
     "title": "LoginOtpRequest",
-    "description": "Body for POST /auth/login/otp \u2014 the second step of a two-step login."
+    "description": "Body for POST /auth/login/otp — the second step of a two-step login."
    },
    "LoginRequest": {
     "properties": {
@@ -2376,7 +2520,7 @@
      "content"
     ],
     "title": "MessageCreate",
-    "description": "Body for POST /conversations/{id}/messages (starts a streamed AI reply).\n\n``client_timezone`` / ``client_utc_offset_minutes`` describe the *sender's* clock\n(the browser knows both), so the model can be told what time it is where the user\nis. They are optional: without them the AI sees UTC timestamps only, exactly as\nbefore. Both are treated as untrusted text \u2014 see app/ai/context.py, which strips\nanything unusable rather than failing the message over it."
+    "description": "Body for POST /conversations/{id}/messages (starts a streamed AI reply).\n\n``client_timezone`` / ``client_utc_offset_minutes`` describe the *sender's* clock\n(the browser knows both), so the model can be told what time it is where the user\nis. They are optional: without them the AI sees UTC timestamps only, exactly as\nbefore. Both are treated as untrusted text — see app/ai/context.py, which strips\nanything unusable rather than failing the message over it."
    },
    "MessageRead": {
     "properties": {
@@ -2586,7 +2730,7 @@
      "created_at"
     ],
     "title": "ModelRead",
-    "description": "A model offered for conversations.\n\nEndpoint credentials (``AI_ENDPOINTS.BASE_URL`` / ``API_KEY``) are never exposed \u2014\nonly the endpoint's id."
+    "description": "A model offered for conversations.\n\nEndpoint credentials (``AI_ENDPOINTS.BASE_URL`` / ``API_KEY``) are never exposed —\nonly the endpoint's id."
    },
    "ModelUpdate": {
     "properties": {
@@ -2665,7 +2809,7 @@
     },
     "type": "object",
     "title": "ModelUpdate",
-    "description": "Body for PATCH /models/{id} (administrators only) \u2014 at least one field."
+    "description": "Body for PATCH /models/{id} (administrators only) — at least one field."
    },
    "OtpChallengeRead": {
     "properties": {
@@ -2743,7 +2887,7 @@
     },
     "type": "object",
     "title": "OtpEnableRequest",
-    "description": "Body for POST /me/otp/enable \u2014 the contact to verify and its channel.\n\nLengths are only bounded to keep the payload sane; the shape is validated by\n``normalize_mobile`` / ``normalize_email``, which explain what is wrong instead\nof returning a schema error. ``method`` defaults to SMS, so a body written\nbefore email existed still means exactly what it used to."
+    "description": "Body for POST /me/otp/enable — the contact to verify and its channel.\n\nLengths are only bounded to keep the payload sane; the shape is validated by\n``normalize_mobile`` / ``normalize_email``, which explain what is wrong instead\nof returning a schema error. ``method`` defaults to SMS, so a body written\nbefore email existed still means exactly what it used to."
    },
    "OtpRequiredResponse": {
     "properties": {
@@ -2787,7 +2931,7 @@
        }
       ],
       "title": "Alternative Method",
-      "description": "The other usable channel, if any \u2014 absent when there is none"
+      "description": "The other usable channel, if any — absent when there is none"
      }
     },
     "type": "object",
@@ -2844,6 +2988,177 @@
     ],
     "title": "PasswordChangeRequest",
     "description": "Body for POST /me/password.\n\nThe confirmation field is the client's business, not the API's: by the time a\nrequest arrives there is only one new password to set."
+   },
+   "PasswordResetAuthorizationRead": {
+    "properties": {
+     "reset_token": {
+      "type": "string",
+      "title": "Reset Token"
+     },
+     "expires_in_seconds": {
+      "type": "integer",
+      "title": "Expires In Seconds",
+      "description": "How long the authorization stays usable"
+     }
+    },
+    "type": "object",
+    "required": [
+     "reset_token",
+     "expires_in_seconds"
+    ],
+    "title": "PasswordResetAuthorizationRead",
+    "description": "The proof that the code was verified, and how long it lasts.\n\nThis is not an access token and is accepted by no other endpoint: it authorizes\none password change, for one account, for a few minutes."
+   },
+   "PasswordResetCompleteRequest": {
+    "properties": {
+     "reset_token": {
+      "type": "string",
+      "maxLength": 256,
+      "minLength": 16,
+      "title": "Reset Token",
+      "description": "The authorization from POST /auth/password-reset/verify"
+     },
+     "new_password": {
+      "type": "string",
+      "maxLength": 128,
+      "minLength": 8,
+      "title": "New Password"
+     }
+    },
+    "type": "object",
+    "required": [
+     "reset_token",
+     "new_password"
+    ],
+    "title": "PasswordResetCompleteRequest",
+    "description": "Body for POST /auth/password-reset/complete."
+   },
+   "PasswordResetOptionsRead": {
+    "properties": {
+     "methods": {
+      "items": {
+       "type": "string",
+       "enum": [
+        "SMS",
+        "EMAIL",
+        "TOTP"
+       ]
+      },
+      "type": "array",
+      "title": "Methods",
+      "description": "Methods this account can be recovered with, best-effort"
+     },
+     "method": {
+      "anyOf": [
+       {
+        "type": "string",
+        "enum": [
+         "SMS",
+         "EMAIL",
+         "TOTP"
+        ]
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Method",
+      "description": "Channel a code was sent through, when one was sent"
+     },
+     "challenge_id": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Challenge Id",
+      "description": "Present only when a code was actually sent"
+     },
+     "code_expires_in_seconds": {
+      "anyOf": [
+       {
+        "type": "integer"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Code Expires In Seconds",
+      "description": "Lifetime of the code, in seconds"
+     },
+     "message": {
+      "type": "string",
+      "title": "Message"
+     }
+    },
+    "type": "object",
+    "required": [
+     "methods",
+     "message"
+    ],
+    "title": "PasswordResetOptionsRead",
+    "description": "What a recovery attempt may do next.\n\nThe message is deliberately the same whether or not the account exists, and no\ndestination is ever named: the caller has proved nothing about the account yet."
+   },
+   "PasswordResetRequest": {
+    "properties": {
+     "identifier": {
+      "type": "string",
+      "maxLength": 200,
+      "minLength": 1,
+      "title": "Identifier",
+      "description": "Username, or the account's verified email address"
+     },
+     "method": {
+      "anyOf": [
+       {
+        "type": "string",
+        "enum": [
+         "SMS",
+         "EMAIL",
+         "TOTP"
+        ]
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Method",
+      "description": "Channel to send the code through; omit to only list the options"
+     }
+    },
+    "type": "object",
+    "required": [
+     "identifier"
+    ],
+    "title": "PasswordResetRequest",
+    "description": "Body for POST /auth/password-reset/request.\n\n``identifier`` is the username or the account's verified email address.\n``method`` is optional: omitting it asks only which methods the account can be\nrecovered by, which is the first screen of the flow."
+   },
+   "PasswordResetVerifyRequest": {
+    "properties": {
+     "challenge_id": {
+      "type": "string",
+      "maxLength": 128,
+      "minLength": 16,
+      "title": "Challenge Id"
+     },
+     "code": {
+      "type": "string",
+      "maxLength": 6,
+      "minLength": 6,
+      "pattern": "[0-9]{6}",
+      "title": "Code"
+     }
+    },
+    "type": "object",
+    "required": [
+     "challenge_id",
+     "code"
+    ],
+    "title": "PasswordResetVerifyRequest",
+    "description": "Body for POST /auth/password-reset/verify — the code step."
    },
    "PersonaBrief": {
     "properties": {
@@ -3030,7 +3345,7 @@
     },
     "type": "object",
     "title": "PersonaUpdate",
-    "description": "Body for PATCH /personas/{id} \u2014 at least one field must be provided."
+    "description": "Body for PATCH /personas/{id} — at least one field must be provided."
    },
    "RegisterRequest": {
     "properties": {
@@ -3354,7 +3669,7 @@
     },
     "type": "object",
     "title": "UserUpdate",
-    "description": "Body for PATCH /me \u2014 at least one field must be provided.\n\n``username`` follows the same rules as registration; uniqueness is enforced\nby the database and reported as 409."
+    "description": "Body for PATCH /me — at least one field must be provided.\n\n``username`` follows the same rules as registration; uniqueness is enforced\nby the database and reported as 409."
    },
    "ValidationError": {
     "properties": {

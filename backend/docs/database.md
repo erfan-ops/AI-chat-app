@@ -246,7 +246,7 @@ All `VARCHAR2` columns use byte semantics (`CHAR_USED = B`).
 | EXPIRES_AT | TIMESTAMP(6) | Y | — | `CREATED_AT` + `OTP_CODE_TTL_SECONDS` |
 | CONSUMED | NUMBER(1) | Y | — | `0` while the code is live, `1` once it has been used. A code that expired or was superseded stays `0` — issued and never used |
 | CONSUMED_AT | TIMESTAMP(6) | Y | — | When it was used |
-| PURPOSE | VARCHAR2(100) | Y | — | `login` \| `verify_contact` (see conventions) |
+| PURPOSE | VARCHAR2(100) | Y | — | `login` \| `verify_contact` \| `password_reset` (see conventions) |
 | METHOD | VARCHAR2(20) | Y | — | `SMS` \| `EMAIL` \| `TOTP` — how the code travelled (`TOTP` = it never left the user's device) |
 
 - **Audit trail of issued one-time codes**, created 2026-09-24 by the project owner.
@@ -343,10 +343,12 @@ Because there are no check constraints, the API defines and documents these valu
   destination; `TOTP` needs an enrolled authenticator — an account whose preference names
   a method it cannot use fails closed too, rather than substituting another one.
 - `OTP_LOG.PURPOSE`: `login` (a code to sign in) | `verify_contact` (a code confirming a
-  mobile number or an email address). `OTP_LOG.METHOD` reuses `USERS.PREFERRED_OTP_METHOD`'s
-  `SMS` | `EMAIL` | `TOTP` — `TOTP` records that a challenge was opened for a code the
-  user's own app generates, which also means `CODE_HASH` is NULL for that row (there is no
-  code here to hash). `OTP_LOG.CONSUMED`: `0` | `1`.
+  mobile number or an email address) | `password_reset` (a code authorizing one password
+  change — see `docs/password-reset-notes.md`). `OTP_LOG.METHOD` reuses
+  `USERS.PREFERRED_OTP_METHOD`'s `SMS` | `EMAIL` | `TOTP` — `TOTP` records that a
+  challenge was opened for a code the user's own app generates, which also means
+  `CODE_HASH` is NULL for that row (there is no code here to hash).
+  `OTP_LOG.CONSUMED`: `0` | `1`.
 - `CONVERSATIONS.STATUS`: `ACTIVE` | `DELETED` (**soft delete** — DELETE endpoint sets this;
   rows and messages are preserved).
 - `MESSAGES.ROLE`: `user` | `assistant`.

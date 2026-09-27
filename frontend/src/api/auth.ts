@@ -9,6 +9,10 @@ import type {
   OtpRequiredResponse,
   OtpVerifyRequest,
   PasswordChangeRequest,
+  PasswordResetAuthorization,
+  PasswordResetCompleteRequest,
+  PasswordResetOptions,
+  PasswordResetRequest,
   RegisterRequest,
   TotpEnrollment,
   User,
@@ -61,6 +65,49 @@ export function signInWithGoogle(request: GoogleSignInRequest): Promise<LoginRes
  *  login only, which never changes the account's saved default. */
 export function switchOtpMethod(request: LoginOtpMethodRequest): Promise<OtpRequiredResponse> {
   return apiRequest<OtpRequiredResponse>('/auth/login/otp/method', {
+    method: 'POST',
+    body: request,
+    authenticated: false,
+  })
+}
+
+/** Start a password recovery: which methods the account can be recovered by, and —
+ *  when `method` is given — a code sent through it.
+ *
+ *  Unauthenticated by definition (that is why the user is here). The answer says the
+ *  same thing whether or not the account exists, so nothing here can be read as
+ *  "that account is real". */
+export function requestPasswordReset(
+  request: PasswordResetRequest,
+): Promise<PasswordResetOptions> {
+  return apiRequest<PasswordResetOptions>('/auth/password-reset/request', {
+    method: 'POST',
+    body: request,
+    authenticated: false,
+  })
+}
+
+/** Exchange the code for the authorization that allows one password change.
+ *
+ *  The code is checked server-side; this call proves nothing on its own and changes
+ *  nothing. What it returns is what {@link completePasswordReset} requires. */
+export function verifyPasswordResetCode(
+  request: OtpVerifyRequest,
+): Promise<PasswordResetAuthorization> {
+  return apiRequest<PasswordResetAuthorization>('/auth/password-reset/verify', {
+    method: 'POST',
+    body: request,
+    authenticated: false,
+  })
+}
+
+/** Set the new password. The authorization is the only accepted proof: it is bound
+ *  to one account, expires ten minutes after the code was verified, and is spent by
+ *  the first successful call. */
+export function completePasswordReset(
+  request: PasswordResetCompleteRequest,
+): Promise<User> {
+  return apiRequest<User>('/auth/password-reset/complete', {
     method: 'POST',
     body: request,
     authenticated: false,

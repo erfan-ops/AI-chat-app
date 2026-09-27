@@ -158,6 +158,26 @@ and uses the `AI_API_KEY` / `AI_BASE_URL` / `AI_MODEL` env fallbacks.
   An incorrect or expired code is **400, never 401** — the frontend signs out on any
   authenticated 401. Never log or return a code, a destination, a secret or an API key,
   and never send a code before the password is verified.
+- **Password reset** (`app/services/password_reset_service.py`,
+  `app/api/routes/password_reset.py`): three public endpoints —
+  `POST /auth/password-reset/{request,verify,complete}` — built entirely on the machinery
+  above, with `purpose="password_reset"`. `verify` **changes nothing**; it consumes the
+  challenge and mints a 256-bit `secrets` token, stored as an HMAC (per-process key),
+  bound to one user, single-use (spent *before* the write), good for
+  `PASSWORD_RESET_AUTHORIZATION_TTL_SECONDS`, and accepted by `/complete` alone — never
+  as a bearer token, and never with a client-supplied claim standing in for it
+  (`{"otpVerified": true}` is ignored like any unknown field). Recovery channels come
+  from `OtpDeliveryService.usable`, so they cannot drift from the sign-in ones, and by
+  TOTP it checks the **existing** `USERS.TOTP_SECRET` — never a second secret, never a
+  rotation. Limits are grouped by flow (`OtpService._LIMIT_GROUPS`): `password_reset` has
+  its own cooldown and daily cap (`PASSWORD_RESET_MAX_SENDS_PER_DAY`), while
+  `login`/`verify_contact` keep the sharing they always had; the per-destination window
+  stays shared, and `reserve_request_slot` counts recovery *requests* against a separate
+  per-address window so a 429 can never say whether an account exists. Completing a reset
+  drops the account's challenges (every purpose) and its other authorizations, and clears
+  its login throttle. Never return a destination or masked hint from `/request`: the
+  caller has proved nothing. Decisions and open items:
+  `docs/password-reset-notes.md`.
 
 ## Invariants & gotchas
 

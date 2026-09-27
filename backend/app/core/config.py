@@ -78,10 +78,12 @@ class Settings(BaseSettings):
     # attempting a send that cannot work.
     resend_api_key: str = ""
     resend_from_email: str = "AI-chat@mail.erfancodes.ir"
-    # Subject lines. The bodies are the two templates in ``email_service`` — a code
-    # to sign in, and a code confirming an address for the first time.
+    # Subject lines. The bodies are the three templates in ``email_service`` — a code
+    # to sign in, a code confirming an address for the first time, and a code for
+    # resetting a password.
     resend_otp_subject: str = "Your AI Chat verification code"
     resend_activation_subject: str = "Confirm your email address"
+    resend_reset_subject: str = "Reset your AI Chat password"
     # Seconds; the SDK's HTTPXClient takes an int.
     resend_timeout_seconds: int = Field(default=10, gt=0)
     # NTP: the server's own clock is only trusted as far as this offset says. It is
@@ -120,6 +122,19 @@ class Settings(BaseSettings):
     # Authenticator codes have no send to throttle, so the attempt side carries the
     # limit: this many wrong codes locks authenticator challenges for that account.
     totp_lockout_seconds: int = Field(default=300, ge=0)
+
+    # Password reset. The code itself follows the same conventions as a login code —
+    # same lifetime, same resend interval, same number of attempts — because it is the
+    # same kind of secret. What is separate is the *counting*: a reset send never spends
+    # the login flow's budget and vice versa (see OtpService._limit_group), so asking for
+    # a reset cannot lock the user out of signing in, and a failed sign-in cannot use up
+    # the recovery allowance. The daily allowance is smaller than login's on purpose:
+    # resetting a password is rarer than signing in, and it is what an attacker with a
+    # stolen phone would reach for.
+    password_reset_max_sends_per_day: int = Field(default=5, ge=1)
+    # How long the authorization issued after a verified code stays usable: the window
+    # the user has to choose a new password.
+    password_reset_authorization_ttl_seconds: int = Field(default=600, ge=60)
 
     ai_context_max_messages: int = Field(default=50, ge=1)
     ai_default_context_chars: int = Field(default=16000, ge=100)

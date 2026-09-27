@@ -31,6 +31,7 @@ from app.api.dependencies import (
     get_auth_service,
     get_email_service,
     get_otp_service,
+    get_password_reset_service,
     get_provider_factory,
     get_session_factory,
     get_settings,
@@ -49,6 +50,7 @@ from app.db.models.user import ADMIN_ROLE, User
 from app.exceptions import ServiceUnavailableError
 from app.main import app
 from app.services.otp_service import OtpService
+from app.services.password_reset_service import PasswordResetService
 from app.services.time_service import TimeService
 from app.services.totp_service import TotpService
 
@@ -64,6 +66,7 @@ TEST_SETTINGS = Settings(
     resend_from_email="AI-chat@mail.erfancodes.ir",
     resend_otp_subject="Your AI Chat verification code",
     resend_activation_subject="Confirm your email address",
+    resend_reset_subject="Reset your AI Chat password",
     # Same reason: these tests assert on code lifetime and cooldowns, so the
     # suite must not inherit whatever timing .env happens to use.
     otp_code_ttl_seconds=120,
@@ -75,6 +78,10 @@ TEST_SETTINGS = Settings(
     otp_max_sends_per_ip=10,
     totp_lockout_seconds=300,
     totp_enroll_ttl_seconds=600,
+    # Password reset: its own daily allowance and the lifetime of the authorization
+    # it issues, both asserted on directly (never inherited from a .env).
+    password_reset_max_sends_per_day=5,
+    password_reset_authorization_ttl_seconds=600,
 )
 
 TEST_PASSWORD = "password123"
@@ -307,9 +314,10 @@ class RecordingSmsService:
 class RecordingEmailService:
     """Stands in for ``EmailService``: records what would be sent, never goes out."""
 
-    def __init__(self, *, fail: bool = False) -> None:
+    def __init__(self, *, fail: bool = False, configured: bool = True) -> None:
         self.sent: list[dict[str, Any]] = []
         self.fail = fail
+        self._configured = configured
 
     async def send_otp_email(
         self, *, recipient: str, code: str, user_id: int, purpose: str
@@ -328,7 +336,8 @@ class RecordingEmailService:
 
     @property
     def is_configured(self) -> bool:
-        return True
+        """Mirrors the real service: the delivery layer asks before offering a channel."""
+        return self._configured
 
 
 # Pinned rather than inherited: Settings() also reads the developer's .env, which
@@ -392,6 +401,20 @@ async def _reset_otp_challenges(otp_service: OtpService) -> AsyncIterator[None]:
     """Keep OTP challenges from leaking state between tests."""
     yield
     otp_service.reset_all()
+
+
+@pytest_asyncio.fixture(autouse=True)
+async def password_reset_service(clock: FakeClock) -> PasswordResetService:
+    """The reset service requests use, on the same clock as the challenge store.
+
+    Both halves of the flow have to age together: a test that expires a code advances
+    this clock, and the authorization issued afterwards (and the ten minutes it lasts)
+    has to age with it.
+    """
+    service = PasswordResetService(TEST_SETTINGS, clock=clock)
+    app.dependency_overrides[get_password_reset_service] = lambda: service
+    yield service
+    service.reset_all()
 
 
 @pytest_asyncio.fixture

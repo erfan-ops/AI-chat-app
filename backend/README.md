@@ -159,8 +159,9 @@ Copy `.env.example` to `.env` and fill in real values (never commit `.env`):
 | `SMS_IR_BASE_URL` / `SMS_IR_TIMEOUT_SECONDS` | `https://api.sms.ir` / `10` | Provider endpoint (overridable for a local stub) and request timeout |
 | `RESEND_API_KEY` | *(empty)* | Resend API key for two-step codes sent by email. Unset disables the email channel (`503 Email is not configured`) |
 | `RESEND_FROM_EMAIL` | `AI-chat@mail.erfancodes.ir` | Sender address; its domain must be verified in Resend |
-| `RESEND_ACTIVATION_SUBJECT` | `Confirm your email address` | Subject for the code that confirms a new address. The bodies of both emails are the templates in `app/services/email_service.py` |
+| `RESEND_ACTIVATION_SUBJECT` | `Confirm your email address` | Subject for the code that confirms a new address. The bodies of the three emails are the templates in `app/services/email_service.py` |
 | `RESEND_OTP_SUBJECT` / `RESEND_TIMEOUT_SECONDS` | `Your AI Chat verification code` / `10` | Subject line and request timeout |
+| `RESEND_RESET_SUBJECT` | `Reset your AI Chat password` | Subject for the code that authorizes a password reset |
 | `OTP_CODE_TTL_SECONDS` / `OTP_RESEND_COOLDOWN_SECONDS` | `120` / `60` | Code lifetime and minimum gap between two codes for one user (per delivery method) |
 | `OTP_MAX_VERIFY_ATTEMPTS` / `OTP_MAX_SENDS_PER_DAY` | `5` / `10` | Wrong guesses allowed per code, and the daily send cap per user (across methods). Authenticator challenges send nothing, so they never spend it |
 | `OTP_RATE_WINDOW_SECONDS` | `900` | The window the two limits below are counted over |
@@ -171,6 +172,8 @@ Copy `.env.example` to `.env` and fill in real values (never commit `.env`):
 | `NTP_TIMEOUT_SECONDS` / `NTP_MAX_DELAY_SECONDS` | `5.0` / `1.0` | Round-trip timeout, and the largest delay a sample may have to be trusted |
 | `NTP_MAX_OFFSET_AGE_SECONDS` | `21600` | How old a measured offset may get before authenticator verification refuses (`503`) rather than trust it |
 | `TOTP_ENROLL_TTL_SECONDS` | `600` | How long an enrolment stays open before the QR/secret must be requested again |
+| `PASSWORD_RESET_MAX_SENDS_PER_DAY` | `5` | Daily cap for recovery codes — its own budget, so it neither spends nor is spent by the sign-in allowance |
+| `PASSWORD_RESET_AUTHORIZATION_TTL_SECONDS` | `600` | How long the authorization issued after a verified code stays usable (single-use, and accepted only by `/complete`) |
 
 ## Installation & running
 
@@ -338,6 +341,43 @@ code leaves the device.
 - The challenge store is in-process: **single worker or sticky sessions** — see
   `docs/otp-2fa-notes.md`.
 
+### Forgot password (`POST /auth/password-reset/*`)
+
+Three public endpoints, and the middle one is what makes the last one safe: **the API
+verifies the code itself and remembers that it did**. The client is never asked whether
+the code was right, and no field can assert it (`{"otpVerified": true}` is ignored like
+any other unknown field).
+
+- `POST /auth/password-reset/request` — body `{identifier, method?}`. `identifier` is a
+  username or the account's verified email address. Without `method` it only reports
+  which methods the account can be recovered by; with one it sends a code through it and
+  returns a `challenge_id`. **The answer is identical whether or not the account
+  exists** (same status, same wording) and it never names a destination — no address, no
+  phone suffix, no masked hint. Recovery by authenticator app uses the
+  `USERS.TOTP_SECRET` already enrolled for two-step verification: nothing is sent, and
+  the secret is never rotated.
+- `POST /auth/password-reset/verify` — body `{challenge_id, code}`. Returns
+  `{reset_token, expires_in_seconds}`. It changes nothing: a verified code is not a
+  password change and not a session.
+- `POST /auth/password-reset/complete` — body `{reset_token, new_password}`. Sets the
+  password, hashes it like every other (Argon2id), and drops the account's outstanding
+  challenges. `reset_token` is 256 bits from `secrets`, stored only as an HMAC, bound to
+  one account, single-use, valid for `PASSWORD_RESET_AUTHORIZATION_TTL_SECONDS` (10
+  minutes) — and accepted by **this endpoint alone**: presenting it as a bearer token
+  anywhere else is a `401`.
+
+The reset code keeps the conventions of a sign-in code (same lifetime, cooldown and
+attempt cap), but its **budgets are its own**: a reset never spends the sign-in flow's
+daily allowance or cooldown and a failed sign-in never eats the recovery allowance
+(`PASSWORD_RESET_MAX_SENDS_PER_DAY`, 5). The per-destination and per-address windows stay
+shared — they bound messages, not one account. For this flow the per-address window
+counts *requests* rather than sends, so a request that sends nothing (an unknown account)
+is refused at exactly the same point as one that would: counting only sends would make
+`429` itself a way to ask whether an account exists.
+
+Decisions, enumeration trade-offs and the session-revocation limitation are in
+`docs/password-reset-notes.md`.
+
 ## API overview
 
 | Method & path | Description |
@@ -347,6 +387,9 @@ code leaves the device.
 | `POST /auth/google` | Sign in with a Google Identity Services credential (public); creates the account on first use, and returns the same payload as `/auth/login` |
 | `POST /auth/login/otp` | Complete a two-step login with the code (public) |
 | `POST /auth/login/otp/method` | Send this login's code through the other channel instead (public) |
+| `POST /auth/password-reset/request` | Start a password recovery: which methods the account has, and a code sent through one (public; the answer says nothing about whether the account exists) |
+| `POST /auth/password-reset/verify` | Exchange the code for a ten-minute, single-use `reset_token` (public; changes nothing) |
+| `POST /auth/password-reset/complete` | Set the new password with that `reset_token` (public; the token only works here, once) |
 | `GET /me` · `PATCH /me` | Profile; update username / display name / default model / `preferred_otp_method` / `avatar_url` (a taken username is `409`; an explicit `null` avatar removes the picture) |
 | `POST /me/password` | Change the password — needs the current one (`400` if wrong, never `401`) |
 | `POST /me/otp/enable` · `/me/otp/verify` | Verify a mobile number, an email address or an enrolled authenticator, then turn two-step on |

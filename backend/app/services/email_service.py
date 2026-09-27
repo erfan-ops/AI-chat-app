@@ -4,9 +4,10 @@ Provider specifics live here and nowhere else. The API key comes from settings
 only, and neither the key, the code, nor the recipient address is ever logged or
 returned — a log line carries the user id and Resend's own error code instead.
 
-The message bodies are the two templates below: one for confirming an address for
-the first time, one for a sign-in code. They are written as plain HTML with inline
-styles and a table layout, because that is what mail clients actually render —
+The message bodies are the templates below: one for confirming an address for the
+first time, one for a sign-in code, one for resetting a password. They are written
+as plain HTML with inline styles and a table layout, because that is what mail
+clients actually render —
 no external stylesheet, no images, no web fonts. A ``<style>`` block adds dark-mode
 colours and tighter padding on small screens where the client supports it; every
 rule there is an override, so a client that ignores it still gets a readable light
@@ -39,7 +40,7 @@ _FONT = "-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans
 
 @dataclass(frozen=True)
 class OtpEmailCopy:
-    """Everything that differs between the two emails — the words, not the layout."""
+    """Everything that differs between the emails — the words, not the layout."""
 
     subject: str
     preheader: str
@@ -49,7 +50,10 @@ class OtpEmailCopy:
 
 
 # Confirming an address is not the same act as signing in, and a code that arrives
-# saying "verification code" for both is how people approve the wrong thing.
+# saying "verification code" for both is how people approve the wrong thing. A reset
+# code is a third act again: it is the one that can take an account away from its
+# owner, so it says so plainly in the subject line and reassures the person who did
+# not ask for it.
 _COPY: dict[Purpose, OtpEmailCopy] = {
     "login": OtpEmailCopy(
         subject="Your AI Chat verification code",
@@ -69,6 +73,16 @@ _COPY: dict[Purpose, OtpEmailCopy] = {
         footnote=(
             "If you didn't add this address, you can ignore this email — "
             "your account is unchanged and codes will not be sent here."
+        ),
+    ),
+    "password_reset": OtpEmailCopy(
+        subject="Reset your AI Chat password",
+        preheader="Your one-time code for resetting your AI Chat password.",
+        heading="Reset your password",
+        intro="Enter this code in AI Chat to choose a new password.",
+        footnote=(
+            "If you didn't ask for this, you can ignore this email — your password is "
+            "unchanged. Nobody can set a new one without this code."
         ),
     ),
 }
@@ -170,9 +184,11 @@ class EmailService:
         return bool(self._settings.resend_api_key)
 
     def subject_for(self, purpose: Purpose) -> str:
-        """The subject line for ``purpose``; the sign-in one is configurable."""
+        """The subject line for ``purpose``; the sign-in and reset ones are configurable."""
         if purpose == "login":
             return self._settings.resend_otp_subject
+        if purpose == "password_reset":
+            return self._settings.resend_reset_subject
         return self._settings.resend_activation_subject
 
     async def send_otp_email(

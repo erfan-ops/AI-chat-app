@@ -8,6 +8,7 @@ import { errorMessage } from '../../utils/errors'
 import { ChatBubbleIcon, SparklesIcon } from '../../components/Icons'
 import { Spinner } from '../../components/Spinner'
 import { otpMethodLabel, parseOtpMethod } from '../../utils/otpMethod'
+import { RESET_PASSWORD_PATH, navigate } from '../../utils/path'
 import type { LoginResponse, OtpMethod, OtpRequiredResponse } from '../../types/api'
 import { GoogleSignInButton } from './GoogleSignInButton'
 import styles from './AuthPage.module.css'
@@ -359,6 +360,20 @@ export function AuthPage() {
                   </p>
                 )}
               </div>
+            )}
+
+            {/* Recovery, on the tab where it is needed. A page rather than a dialog:
+                it has to be reachable directly, since the person using it may be
+                arriving from a bookmark or a password manager rather than from here. */}
+            {mode === 'login' && (
+              <button
+                type="button"
+                className={styles.forgotPassword}
+                onClick={() => navigate(RESET_PASSWORD_PATH)}
+                disabled={busy}
+              >
+                Forgot password?
+              </button>
             )}
 
             <button

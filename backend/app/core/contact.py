@@ -23,10 +23,11 @@ OTP_METHODS: tuple[OtpMethod, ...] = ("SMS", "EMAIL", "TOTP")
 # nothing is sent, so it has neither.
 SentOtpMethod = Literal["SMS", "EMAIL"]
 
-# Why a code was issued. It decides the wording of the email (sign in vs confirm an
-# address), keeps a code minted for one flow from being spent on the other, and is
-# written to OTP_LOG.PURPOSE — so the names are what a reader of that history sees.
-Purpose = Literal["login", "verify_contact"]
+# Why a code was issued. It decides the wording of the email (sign in, confirm an
+# address, reset a password), keeps a code minted for one flow from being spent on
+# another, and is written to OTP_LOG.PURPOSE — so the names are what a reader of that
+# history sees.
+Purpose = Literal["login", "verify_contact", "password_reset"]
 
 # ``USERS.PREFERRED_OTP_METHOD`` is nullable and holds no default, so NULL means
 # SMS: every account that enabled two-step verification before email existed is an
